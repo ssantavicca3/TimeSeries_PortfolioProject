@@ -1,0 +1,34 @@
+Important links/resources:
+
+# Full walkthrough of a time series analysis pre-process with Python code;
+# i.e., everything we should do before choosing a model. His next article
+# goes into the modeling component.
+https://towardsdatascience.com/time-series-analysis-for-machine-learning-with-python-626bee0d0205
+
+# R code for an LSTM model
+https://github.com/rwanjohi/Time-series-forecasting-using-LSTM-in-R/blob/master/LSTM%20Time%20series%20forecasting.R
+
+# Explanation of LSTM and example of its use to predict stocks
+https://towardsdatascience.com/lstm-time-series-forecasting-predicting-stock-prices-using-an-lstm-model-6223e9644a2f#:~:text=%20Time-Series%20Forecasting%3A%20Predicting%20Stock%20Prices%20Using%20An,price%20history%20data.%20Thanks%20to%20Yahoo...%20More%20
+
+
+
+My Project:
+Take the sales Kaggle sales data and follow the first link above until ready
+for modeling. Then, follow the second and third links to fit the model.
+
+Explanation in presentation: "I wanted to brush up on my R and time series 
+after spending some time learning Python so I attempted to replicate a Python
+analysis in R on a practice set performed by [name, link] and decided to 
+take it a step further... Furthermore, I wanted to experiment with different
+plot themes and automating ts analysis processes."
+
+data:  https://www.kaggle.com/c/competitive-data-science-predict-future-sales/data?select=shops.csv
+
+Project plans:
+•	Time series analysis:
+o	Includes forecasting with a few different models
+o	Includes descriptive/exploratory charts
+•	Interactive (htmlwidget) libraries of interest:
+o	Dygraphs
+o	Highcharter

@@ -1,0 +1,112 @@
+# Preparing independent and dependent features
+prepare_data <- function (ts_data, time_steps, y.prediction = 1, n_features = 1, return.x = F, return.y = F) {
+  # ts_data = univariate ts vector
+  # time_steps = lag, memory
+  # y.pred = # of y-values the lagged/memory values are used to predict
+  # n_features = # of independent predictors
+  
+  ts_data %<>% as.matrix() 
+  
+  # Independent feature samples
+  X <- t(sapply(
+    1:(length(ts_data) - time_steps - y.prediction + 1),
+    function(x) ts_data[x:(x + time_steps - 1), 1]
+  ))
+  # reshape to 3 dimensions [samples, timesteps, n_features]
+  dim(X) <- c(dim(X)[1], dim(X)[2], 1)
+  
+  # Dependent feature samples
+  y <- t(sapply(
+    (1 + time_steps):(length(ts_data) - y.prediction + 1),
+    function(x) ts_data[x:(x + y.prediction - 1)]
+  ))
+  # invert dimensions to get one column, n rows
+  dim(y) <- c(nrow(X), 1)
+  
+  # Conditional output
+  if (return.x) {
+    return(X)
+  } else if (return.y) {
+    return(y)
+  }
+  
+}
+
+
+# Define input sequence
+dat <- c(110, 125, 133, 146, 158, 172, 187, 196, 210)
+# Choose a number of time steps
+time_steps = 3
+# Split into samples
+X = prepare_data(dat, time_steps, return.x = T)
+y = prepare_data(dat, time_steps, return.y = T)
+
+X
+y
+
+
+## Defining the model
+# specify required arguments
+batch_size = 1                # must be a common factor of both the train and test samples
+units = 50                    # can adjust this, in model tuning phase     # have tried 1, 25, & 50
+
+model <- keras_model_sequential() 
+model %>%
+  layer_lstm(units = 50, 
+             batch_input_shape = c(batch_size, 
+                                   dim(X)[2], 
+                                   dim(X)[3]), 
+             return_sequences = TRUE,
+             stateful= TRUE) %>%
+  layer_dropout(rate=0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(layer_dense(units = 1))
+
+# compile the model
+model %>% compile(
+  loss = 'mean squared error',
+  optimizer = "adam",  
+  metrics = 'accuracy'
+)
+summary(model)
+
+# fit the model
+model %>% fit(X, 
+              y, 
+              epochs=200, 
+              batch_size=batch_size, 
+              verbose=0, 
+              shuffle=FALSE)
+
+
+## Predict for the next 10 days feeding the model one sample at a time
+n_forecast = 10
+# x_input <- matrix(c(187, 196, 210), nrow=1, ncol=time_steps)
+lst_output = vector()
+x_input <- array(c(187, 196, 210))
+i = 0
+while (i < n_forecast) {
+  
+  if (length(x_input) > 3) {
+    x_input <- x_input[2:4]
+    dim(x_input) <- c(1, time_steps, 1) 
+    yhat <- model %>% predict(x_input, batch_size=batch_size)
+    x_input <- append(x_input, yhat)
+    lst_output <- append(lst_output, yhat)
+    i = i + 1
+  } else {
+    dim(x_input) <- c(1, time_steps, 1)
+    yhat <- model %>% predict(x_input, batch_size=batch_size)
+    x_input <- append(x_input, yhat)
+    lst_output <- append(lst_output, yhat)
+    i = i + 1
+  }
+  
+}
+lst_output
+
+length(x_input)
+
