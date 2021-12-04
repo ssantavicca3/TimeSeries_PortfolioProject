@@ -623,7 +623,7 @@ plot_eval_forecast <- function(ts, forecast, test=test, train=train, og_df.date_
 }
 
 #NB: to run this w/o error, manually type test=test & train=train, after using the environment variable version of train_test_split()
-# EG)
+# eg)
 plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date) 
 
 
@@ -746,10 +746,11 @@ eval_forecast <- function (ts, forecast, test=test, train=train, console=TRUE,
   
 }
 
+# eg)
 eval_forecast(ms_ts, forecast, test, train, console=F, return.eval_tbl=F, print.eval_tbl = T)
 
 
-# Second, write function to fit a model (stick this in the next function)
+# Second, write function to fit a model (stick this in the next function or make way to merge with eval_forecast() somehow)
 fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85, 
                    fc_len=NULL, assign_fc_obj = c(FALSE, NULL), 
                    eval_fc_output=c("report", "return fc object"),
@@ -798,23 +799,22 @@ fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85,
   if (any(eval_fc_output %like% c("report"))) {
     eval_forecast(ts, forecast, test, train, console=T)
     plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date)
-  } else if (any(eval_fc_output %like% "return fc object")) {
-    assign("forecast", forecast, envir = .GlobalEnv)
-  }
+  } # else if (any(eval_fc_output %like% "return fc object")) {
+  #   
+  # }
   
 }
 
-
-#12/04/21 - I'm struggling to get the following to output eval_fc_output = "report". I think that's where the issue is.
+# eg)
 fc_fn(ts, modelvar = "arima", assign_fc_obj = c(TRUE, "fc.1"),
       manual.arima.spec = arima(train,
                                 order=c(2,1,6), 
                                 seasonal=list(order=c(1,1,1), period=7)),
-      eval_fc_output = c("report", "return fc object"))
+      eval_fc_output = "report")
 
 
 
-#### TESTING THE FUNCTION COMBO in this specific way (i.e., they can both do alot else):
+#### TESTING THE FUNCTION COMBO in this specific way (i.e., they can both do a lot else):
 #first generate 4 forecasts
 fc_fn(ts, modelvar = "arima", assign_fc_obj = c(TRUE, "fc.1"),
       manual.arima.spec = arima(train,
@@ -823,16 +823,18 @@ fc_fn(ts, modelvar = "arima", assign_fc_obj = c(TRUE, "fc.1"),
 fc_fn(ts, modelvar = "arima", autoarima = TRUE, assign_fc_obj = c(TRUE, "fc.2"))
 fc_fn(z_ts, modelvar = "arima", autoarima = TRUE, assign_fc_obj = c(TRUE, "fc.3"))
 fc_fn(ms_ts, modelvar = "tbats", assign_fc_obj = c(TRUE, "fc.4"))
-#second generate 4 tbls
-eval_forecast(ts, fc.1, console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.1")
-eval_forecast(ts, fc.2, console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.2")
-eval_forecast(z_ts, fc.3, console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.3")
-eval_forecast(ms_ts, fc.4, console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.4")
+
+#second generate 4 tbls (NOTE: fc.1 and tbl.1 need to be run back to back, and so on, to maintain the right train/test sets I think)
+eval_forecast(ts, fc.1, test, train,console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.1")
+eval_forecast(ts, fc.2, test, train, console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.2")
+eval_forecast(z_ts, fc.3, test, train, console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.3")
+eval_forecast(ms_ts, fc.4, test, train, console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.4")
+
 #third merge the tables for a ggplot table comparison of model
 tbl.final <- tibble(tbl.1, tbl.2[2], tbl.3[2], tbl.4[2])
-ggplot() + ggpmisc::geom_table_npc(data=tbl.final, label=list(tbl.final), 
-                                   npcx=0.5, npcy=0.5, size=4, 
-                                   table.theme=ttheme_gtstripes) + theme_minimal() +
+ggplot() + geom_table_npc(data=tbl.final, label=list(tbl.final), 
+                          npcx=0.5, npcy=0.5, size=4, 
+                          table.theme=ttheme_gtstripes) + theme_minimal() +
   theme(plot.title = element_text(hjust=0.5, vjust=2, size=11))
 
 
