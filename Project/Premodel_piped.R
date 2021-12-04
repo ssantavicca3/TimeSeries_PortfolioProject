@@ -84,38 +84,40 @@ ts <- df %>%
 
 # View our ts so far
 summary(ts)
-p <- ggplot(ts, aes(x=date, y=sales)) +
-  geom_line(color="turquoise4") +
+ggplot(ts, aes(x=date, y=sales)) +
+  geom_line(color="black", size=.75) +
   theme_minimal() +
-  labs(x="", y="Sales ($)", title="Total Daily Sales (2020)") +
+  labs(x="", y="Sales ($)", title="Total Daily Sales (2013-15)") +
   theme(plot.title = element_text(hjust=0.5, size=20, face="bold"))
-p
+
 
 
 ## Trend Analysis
 # Write function to display rolling statistics in the plot
 trendy_plot <- function (ts, plot_ma=TRUE, plot_intervals=TRUE, window=5) {
   
-  rolling_avg <- zoo::rollmean(ts$sales, k=window, fill = list(NA,NULL,NA))
-  rolling_std <- zoo::rollapply(ts$sales, width=window, sd, fill = list(NA,NULL,NA))
+  rolling_avg <- zoo::rollmean(ts$sales, k=window, align="right")
+  rolling_std <- zoo::rollapply(ts$sales, width=window, sd, align="right")
   
   lower_bound <- rolling_avg - (1.96*rolling_std)
   upper_bound <- rolling_avg + (1.96*rolling_std)
   
-  ts_fun <- ts
+  #subset original series to match window length
+  ts_fun <- ts[window:length(ts$sales),]
   
   p <- ts_fun %.>%
-    data.frame(ts_fun, rolling_avg, lower_bound, upper_bound) %.>% 
+    data.frame(., rolling_avg, lower_bound, upper_bound) %.>% 
     ggplot(., aes(x = date)) %.>%
+    geom_line(aes(y=sales), size=.75) %.>% 
     theme_standard %.>%
-    labels_standard %.>%
-    scale_color_manual(name = "Sales", 
-                       values = "turquoise4",
-                       labels = "Actual Values")
+    labels_standard # %.>%
+    # scale_color_manual(name = "Sales", 
+    #                    values = "turquoise4",
+    #                    labels = "Actual Values")
   
   if (plot_ma) {
-    p <- p + geom_line(aes(y = rolling_avg, color = 'red')) +
-      scale_color_manual(name = "Sales", 
+    p <- p + geom_line(aes(y = rolling_avg, color = 'red'), size=.75) +
+      scale_color_manual(name = "", 
                          values = c("red", "turquoise4"),
                          labels = c("Rolling Avg.", "Actual Values"))
   }
@@ -129,9 +131,11 @@ trendy_plot <- function (ts, plot_ma=TRUE, plot_intervals=TRUE, window=5) {
   
 }
 
+
+
 # Inspect the plot for trends
 trendy_plot(ts, window = 30)
-trendy_plot(ts, window = 365) #NB: can I restrict the input data to the domain of the CIs?
+trendy_plot(ts, window = 365)
 
 
 ## Outlier Detection
@@ -144,6 +148,7 @@ ts %.>%
   labs(x="Sales ($)", y="Frequency", title="Daily Sales Distribution")
 
 # Plot a simple CDF/PDF
+options(scipen=10000)
 ts %.>%
   ggplot(., aes(sales)) %.>%  
   geom_density(color="turquoise4", fill="lightgreen", alpha=.4) %.>% 
@@ -197,9 +202,10 @@ detect_outliers <- function (ts, perc=0.01, gamma=0.01, return_df=TRUE, plot_ts=
     geom_point(aes(x = index, y = sales), 
                data = . %>% filter(outlier %in% 1), color = 'red', size=3, alpha=0.5) +
     labs(x="", y="", title=glue("Outliers Detection: Found {n_outliers[2,2]}")) +
-    scale_color_manual(name = "Sales", 
+    scale_color_manual(name="",
                        values = c("turquoise4", "red"),
-                       labels = c("Actual Values", "Outliers")) 
+                       labels = c("Actual Values", "Outliers")) +
+    theme(legend.justification = c(1,0), legend.position=c(.95,.9))
   
   # conditional function output
   if (plot_ts) {
@@ -296,10 +302,8 @@ plot_stationarity_test <- function (ts, sample=0.20, maxlag=30) {
     theme(legend.position = "none") +
     scale_x_date(breaks = as.Date(c("2013-01-01", "2013-07-01", "2014-01-01", "2014-07-01", "2015-01-01","2015-07-01")),
                  labels=c("Jan. 2013", "Jul", "Jan. 2014", "Jul", "Jan. 2015", "Jul")) +
-    annotate("text", x=as.Date("2015-07-01"), y=c(12000, 11250, 10500), 
-             label=c(glue("95% CV: {cv_95}"), 
-                     glue("99% CV: {cv_99}"),
-                     glue("ADF Stat: {round(adf,2)}")))
+    annotate("text", x=as.Date("2015-07-01"), y=10500, 
+             label=glue("ADF Stat: {round(adf,2)}"))
   
                  
   # pacf (for AR) and acf (for MA)
