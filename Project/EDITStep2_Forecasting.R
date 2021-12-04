@@ -7,6 +7,18 @@
 #                                   #
 #####################################
 
+###########################################################################
+#                                                                         #
+# The following needs to be run before some of the functions (e.g.,       #
+# eval_forecast, plot_eval_forecast). NB: sub correct info in.            #
+#                                                                         #
+# train_test_split(ms_ts, split_perc = 0.85)                              #
+# tbats_model <- tbats(train)                                             #
+# forecast <- forecast(tbats_model, h=length(test), level = c(80, 95, 99))#
+#                                                                         #      
+###########################################################################
+
+
 # For sample subsetting & forecasting
 library(forecast)   
 library(keras)        #LSTM
@@ -95,8 +107,8 @@ train_test_split <- function (ts, split_perc=0.85, out.train=F,
   }
   
 }
-train <- train_test_split(z_ts, split_perc = 0.85, out.train=T)
-test <- train_test_split(z_ts, split_perc = 0.85, out.test=T)
+train <- train_test_split(ts, split_perc = 0.85, out.train=T)
+test <- train_test_split(ts, split_perc = 0.85, out.test=T)
 # option B: output both train + test to the global environment with a single call.
 train_test_split <- function (ts, split_perc=0.85, full_df=F, ts_col=NULL) {
    
@@ -410,7 +422,7 @@ tsdisplay(residuals(fit_arima), lag.max=30, main='Seasonal Model Residuals')
 forecast <- forecast(fit_arima, h = length(test), level = c(80, 95, 99))
 # Execute testing functions
 fc_accuracy_print(test, forecast)
-eval_forecast(ts, forecast)
+eval_forecast(ts, forecast, test=test, train=train)
 
 ##-----------------------------------------------------------------------------
 ## Notes:
@@ -441,13 +453,6 @@ eval_forecast(ts, forecast)
 # https://medium.com/analytics-vidhya/time-series-forecasting-arima-vs-lstm-vs-prophet-62241c203a3b
 
 #NB: have to run everything up to the "Plot the Training & Test Set" section
-
-train_test_split(ts)
-fit_arima <- arima(train, 
-                   order=c(2,1,1), 
-                   seasonal=list(order=c(1,1,1), period=7))  #abt as good as I can get it w/ zoo obj
-forecast <- forecast(fit_arima, h = length(test), level = c(80, 95, 99))
-plot_eval_forecast(ms_ts, forecast, og_df.date_col = ts_df$date)
 
 
 ### For (S)ARIMA(X) stuff...
@@ -616,7 +621,10 @@ plot_eval_forecast <- function(ts, forecast, test=test, train=train, og_df.date_
     # brighter off-red: #FF6666
   
 }
-plot_eval_forecast(ms_ts, forecast, og_df.date_col = ts_df$date)
+
+#NB: to run this w/o error, manually type test=test & train=train, after using the environment variable version of train_test_split()
+# EG)
+plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date) 
 
 
 
@@ -729,21 +737,22 @@ eval_forecast <- function (ts, forecast, test=test, train=train, console=TRUE,
   }
   
   #conditioning output for table to plot area
+  require(ggpmisc)
   if (print.eval_tbl) {
-    ggplot() + ggpmisc::geom_table_npc(data=eval_tbl, label=list(eval_tbl), 
+    ggplot() + geom_table_npc(data=eval_tbl, label=list(eval_tbl), 
                                        npcx=0.5, npcy=0.5, size=10) + 
       theme(plot.title = element_text(hjust=0.5, vjust=2, size=25))
   }
   
 }
 
-eval_forecast(ts, forecast, console=F, return.eval_tbl=F, print.eval_tbl = T)
+eval_forecast(ms_ts, forecast, test, train, console=F, return.eval_tbl=F, print.eval_tbl = T)
 
 
 # Second, write function to fit a model (stick this in the next function)
 fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85, 
                    fc_len=NULL, assign_fc_obj = c(FALSE, NULL), 
-                   eval_fc_output=NULL,
+                   eval_fc_output=c("report", "return fc object"),
                    modelvar=c("arima","tbats"),
                    autoarima=FALSE, 
                    autoarima.spec = auto.arima(y = train, max.order = 20, 
@@ -784,22 +793,24 @@ fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85,
     assign(assign_fc_obj[2], forecast, envir = .GlobalEnv)
   }
   
-  # (optional) console, plot, and return output:
+  # (optional) console & plot output, or assign forecast object:
   #options: c(report", "return fc object")
   if (any(eval_fc_output %like% c("report"))) {
-    eval_forecast(ts, forecast)
-    plot_eval_forecast(ts, forecast, og_df.date_col = ts_df$date)
+    eval_forecast(ts, forecast, test, train, console=T)
+    plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date)
   } else if (any(eval_fc_output %like% "return fc object")) {
-    return(forecast)
+    assign("forecast", forecast, envir = .GlobalEnv)
   }
   
 }
 
-fc_fn(ts, modelvar = "arima", autoarima = FALSE, assign_fc_obj = c(TRUE, "fc.1"),
+
+#12/04/21 - I'm struggling to get the following to output eval_fc_output = "report". I think that's where the issue is.
+fc_fn(ts, modelvar = "arima", assign_fc_obj = c(TRUE, "fc.1"),
       manual.arima.spec = arima(train,
-                                order=c(2,1,1), 
+                                order=c(2,1,6), 
                                 seasonal=list(order=c(1,1,1), period=7)),
-      eval_fc_output = "report")
+      eval_fc_output = c("report", "return fc object"))
 
 
 
