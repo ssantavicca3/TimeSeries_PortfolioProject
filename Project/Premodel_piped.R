@@ -87,7 +87,7 @@ summary(ts)
 ggplot(ts, aes(x=date, y=sales)) +
   geom_line(color="black", size=.75) +
   theme_minimal() +
-  labs(x="", y="Sales ($)", title="Total Daily Sales (2013-15)") +
+  labs(x="", y="", title="Total Daily Sales, USD (2013-15)") +
   theme(plot.title = element_text(hjust=0.5, size=20, face="bold"))
 
 
