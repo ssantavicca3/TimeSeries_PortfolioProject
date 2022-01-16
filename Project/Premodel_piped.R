@@ -201,7 +201,7 @@ detect_outliers <- function (ts, perc=0.01, gamma=0.01, return_df=TRUE, plot_ts=
                   color = "turquoise4"), size=1) +
     geom_point(aes(x = index, y = sales), 
                data = . %>% filter(outlier %in% 1), color = 'red', size=3, alpha=0.5) +
-    labs(x="", y="", title=glue("Outliers Detection: Found {n_outliers[2,2]}")) +
+    labs(x="", y="", title=glue("Outliers Detected: Found {n_outliers[2,2]}")) +
     scale_color_manual(name="",
                        values = c("turquoise4", "red"),
                        labels = c("Actual Values", "Outliers")) +
