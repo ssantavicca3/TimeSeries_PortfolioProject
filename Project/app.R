@@ -24,6 +24,9 @@ library(zoo)           #rolling stats and interpolation
 library(glue)          #string magic
 library(wrapr)         #pipe ggplot layers
 
+# Create "%notin%" operator by negating "%in%"
+`%notin%` <- Negate(`%in%`)
+
 
 ##### Assign common ggplot elements to be subbed later on
 theme_standard <- theme_minimal() +
@@ -53,10 +56,51 @@ ts <- df %>%
   summarise(sales = sum(item_cnt_day))
 
 
+##### User-Defined Functions
+
+# Function to create a trends plot with rolling statistics (mean, CI)
+trendy_plot <- function (ts, plot_ma=TRUE, plot_intervals=TRUE, window=5) {
+  
+  rolling_avg <- zoo::rollmean(ts$sales, k=window, align="right")
+  rolling_std <- zoo::rollapply(ts$sales, width=window, sd, align="right")
+  
+  lower_bound <- rolling_avg - (1.96*rolling_std)
+  upper_bound <- rolling_avg + (1.96*rolling_std)
+  
+  #subset original series to match window length
+  ts_fun <- ts[window:length(ts$sales),]
+  
+  p <- ts_fun %>%
+    data.frame(rolling_avg, lower_bound, upper_bound) %>% 
+    ggplot(aes(x = date)) +
+    geom_line(aes(y=sales), size=.75) +
+    theme_standard +
+    labels_standard # %.>%
+  # scale_color_manual(name = "Sales", 
+  #                    values = "turquoise4",
+  #                    labels = "Actual Values")
+  
+  if (plot_ma) {
+    p <- p + geom_line(aes(y = rolling_avg, color = 'red'), size=.75) +
+      scale_color_manual(name = "", 
+                         values = c("red", "turquoise4"),
+                         labels = c("Rolling Avg.", "Actual Values"))
+  }
+  
+  if (plot_intervals) {
+    p <- p + geom_ribbon(aes(x=date, ymax=upper_bound, ymin=lower_bound),
+                         fill="grey70", alpha=.4) 
+  }
+  
+  print(p)
+  
+}
+
+
 ####################################################################################
 
 
-source : https://shiny.rstudio.com/gallery/ncaa-swim-team-finder.html
+# source : https://shiny.rstudio.com/gallery/ncaa-swim-team-finder.html
 
 
 ##### Define UI
@@ -108,7 +152,7 @@ ui <- fluidPage(
                                 )
                          )
                        )
-              )
+              ) # tabPanel
     ), # navbarMenu
     
     tabPanel("Navbar 1", fluid = TRUE, icon = icon("balance-scale-right"),
@@ -123,9 +167,40 @@ ui <- fluidPage(
                 verbatimTextOutput("txtout")) # mainPanel
     ), # Navbar 1, tabPanel
     
-    tabPanel("Time Series Analysis", fluid = TRUE, icon = icon("balance-scale-right"),
-      
-    ), # Time Series Analysis, tabPanel
+    navbarMenu("Time Series Analysis", icon = icon("balance-scale-right"),
+               tabPanel("Trends", fluid = TRUE,
+                        titlePanel("Trend Analysis"),
+                        sidebarPanel(
+                          sliderInput(inputId = "slider_trendanalysis", 
+                                      label = h3("Window length (k = days)"), 
+                                      min = 1, max = 365, 
+                                      value = 30),
+                          checkboxGroupInput(inputId = "checkGroup", 
+                                             label = h3("Checkbox group"),
+                                             choices = c("Rolling Average",
+                                                         "Bollinger Bands"))
+                        ),
+                        mainPanel(
+                          plotOutput("trends_plot")
+                        )
+                          
+               ), # tabpanel
+               
+               tabPanel("Outliers", fluid = TRUE,
+                        titlePanel("Outlier Detection"),
+                    
+               ), # tabPanel
+               
+               tabPanel("Stationarity", fluid = TRUE,
+                        titlePanel("Stationarity Test"),
+                        
+               ), # tabpanel
+               tabPanel("Seasonality", fluid = TRUE,
+                        titlePanel("Time Series Decomposition"),
+                        
+               ) # tabPanel
+               
+    ), # Time Series Analysis, navbarMenu
     
     tabPanel("Model Design & Testing", fluid = TRUE, icon = icon('chart-bar'),
              "This panel is intentionally left blank"),
@@ -141,7 +216,7 @@ ui <- fluidPage(
 ##### Define server function
 server <- function(input, output) {
   
-  # Intro ()
+  ### Intro ()
   
   # basic ts plot
   output$plt_ts <- renderPlot({
@@ -153,10 +228,34 @@ server <- function(input, output) {
   })
   
   
-  # Navbar 1
+  ### Navbar 1
   
   output$txtout <- renderText({
     paste(input$txt1, input$txt2, sep = " ")
+  })
+  
+  ### Time Series Analysis
+  
+  ## Trends
+  
+  # Slider - window length
+  # checkGroup <- reactive({
+  #   # if (input$checkGroup %notin% c("RA", "BB")) {
+  #   #   c(FALSE, FALSE)
+  #   # } else 
+  #   if (input$checkGroup %notin% "RA" & input$checkGroup %in% "BB") {
+  #     c(FALSE, TRUE)
+  #   } else if (input$checkGroup %in% "RA" & input$checkGroup %notin% "BB") {
+  #     c(TRUE, FALSE)
+  #   } else {
+  #     c(TRUE, TRUE)
+  #   }
+  # })
+  output$trends_plot <- renderPlot({
+      trendy_plot(ts, 
+                  window = input$slider_trendanalysis,
+                  plot_ma = (input$checkGroup == "Rolling Average"),
+                  plot_intervals = (input$checkGroup == "Bollinger Bands"))
   })
   
   
@@ -164,5 +263,5 @@ server <- function(input, output) {
 
 
 ####################################################################################
-###### Create Shiny object
+###### Create Shiny object/ Run application
 shinyApp(ui = ui, server = server)
