@@ -175,10 +175,11 @@ ui <- fluidPage(
                                       label = h3("Window length (k = days)"), 
                                       min = 1, max = 365, 
                                       value = 30),
-                          checkboxGroupInput(inputId = "checkGroup", 
-                                             label = h3("Checkbox group"),
-                                             choices = c("Rolling Average",
-                                                         "Bollinger Bands"))
+                          radioButtons(inputId = "radio", 
+                                       label = h3("Checkbox group"),
+                                       choices = c("Rolling Average",
+                                                   "Bollinger Bands",
+                                                   "Both"))
                         ),
                         mainPanel(
                           plotOutput("trends_plot")
@@ -254,8 +255,8 @@ server <- function(input, output) {
   output$trends_plot <- renderPlot({
       trendy_plot(ts, 
                   window = input$slider_trendanalysis,
-                  plot_ma = (input$checkGroup == "Rolling Average"),
-                  plot_intervals = (input$checkGroup == "Bollinger Bands"))
+                  plot_ma = (input$radio %in% c("Rolling Average", "Both")),
+                  plot_intervals = (input$radio %in% c("Bollinger Bands", "Both")))
   })
   
   
