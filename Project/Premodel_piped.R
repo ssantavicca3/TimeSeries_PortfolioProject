@@ -326,9 +326,11 @@ plot_stationarity_test <- function (ts, sample=0.20, maxlag=30) {
   p / (acf_plot + pacf_plot) 
 
 }
+
+#suppressWarnings(plot_stationarity_test(ts, sample = 0.20, maxlag=30))
 plot_stationarity_test(ts, sample = 0.20, maxlag=30)
 
-# Stabilize the mean by differences the ts
+# Stabilize the mean by differencing the ts
 lag_ts <- ts %>% mutate_all(lag, n=1)
 lag_ts$sales <- ts$sales - lag_ts$sales
 lag_ts$date <- ts$date

@@ -27,8 +27,42 @@ library(zoo)           #rolling stats and interpolation
 library(glue)          #string magic
 library(wrapr)         #pipe ggplot layers
 
+##### Write or amend certain operators
+
 # Create "%notin%" operator by negating "%in%"
 `%notin%` <- Negate(`%in%`)
+
+# Rewrite (wrapr) dot-arrow-pipe S3 dispatch rules to pipe ggplot:
+apply_left.gg <- function(pipe_left_arg,
+                          pipe_right_arg,
+                          pipe_environment,
+                          left_arg_name,
+                          pipe_string,
+                          right_arg_name) {
+  pipe_right_arg <- eval(pipe_right_arg,
+                         envir = pipe_environment,
+                         enclos = pipe_environment)
+  pipe_left_arg + pipe_right_arg 
+}
+apply_right.gg <- function(pipe_left_arg,
+                           pipe_right_arg,
+                           pipe_environment,
+                           left_arg_name,
+                           pipe_string,
+                           right_arg_name) {
+  pipe_left_arg + pipe_right_arg 
+}
+apply_right.labels <- function(pipe_left_arg,
+                               pipe_right_arg,
+                               pipe_environment,
+                               left_arg_name,
+                               pipe_string,
+                               right_arg_name) {
+  if(!("gg" %in% class(pipe_left_arg))) {
+    stop("apply_right.labels expected left argument to be class-gg")
+  }
+  pipe_left_arg + pipe_right_arg 
+}
 
 
 ##### Assign common ggplot elements to be subbed later on
@@ -184,6 +218,70 @@ remove_outliers <- function (ts, outliers_idx, ts_outliers, return_df = TRUE, pl
 }
 
 
+## Function to visualize stats and partial/autocorrelation and run ADF test
+plot_stationarity_test <- function (ts, sample=0.20, maxlag=30) {
+  
+  # test stationarity (Augmented Dickey-Fuller test)
+  test <- adf.test(ts$sales, k=maxlag)
+  adf <- test$statistic
+  pval <- test$p.value
+  lag_order <- test$parameter
+  conclusion <- if (pval < 0.05) "Stationary" else "Non-Stationary"
+  pval_edt <- if(pval <= 0.01) "<= 0.01" else round(pval, 3)
+  
+  # obtain critical values table from urca::ur.df adf test (same specs)
+  ts$sales %.>% 
+    urca::ur.df(., lags = maxlag, type = "trend") %.>%                   
+    { cv_table <- summary(.) } %.>%
+    { cv_95 <- .@cval['tau3', '5pct'] }
+  cv_99 <- cv_table@cval['tau3', '1pct']
+  
+  # plot ts with mean/std of a sample from the first x% and report on ADF
+  dtf_ts <- ts
+  sample_size <- as.integer(length(ts$sales)*sample)
+  dtf_ts$mean <- mean(head(dtf_ts$sales, sample_size))
+  dtf_ts$upper <- mean(head(dtf_ts$sales, sample_size)) +
+    sd(head(dtf_ts$sales, sample_size))
+  dtf_ts$lower <- mean(head(dtf_ts$sales, sample_size)) -
+    sd(head(dtf_ts$sales, sample_size))
+  
+  p <- ggplot(dtf_ts, aes(x=date)) +
+    geom_ribbon(aes(ymax=upper, ymin=lower),
+                fill="grey70", alpha=.4) +
+    geom_line(aes(y=sales, color = "turquoise4")) + 
+    geom_line(aes(y=mean, color = "red")) +
+    labs(x="Date", y="", title=glue("Augmented Dickey-Fuller Test: {conclusion} (p-value: {pval_edt})")) +
+    scale_color_manual(values = c("red", "turquoise4")) +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust=0.5, size=12, face="bold")) +
+    theme(legend.position = "none") +
+    scale_x_date(breaks = as.Date(c("2013-01-01", "2013-07-01", "2014-01-01", "2014-07-01", "2015-01-01","2015-07-01")),
+                 labels=c("Jan. 2013", "Jul", "Jan. 2014", "Jul", "Jan. 2015", "Jul")) +
+    annotate("text", x=as.Date("2015-07-01"), y=10500, 
+             label=glue("ADF Stat: {round(adf,2)}"))
+  
+  # pacf (for AR) and acf (for MA)
+  lower_ylim <- min(min(acf(ts$sales, plot=F)$acf),
+                    min(pacf(ts$sales, plot=F)$acf))   #automating graph alignment
+  acf_plot <- ggAcf(ts$sales, lag.max=maxlag, ci=0.95) + 
+    ylim(c(lower_ylim, 1)) +
+    geom_point(aes(x=lag, y=Freq), color="blue", shape=21, size=1.5, stroke=1.5, fill="white") +
+    labs(y="", title="Autocorrelation (for MA component)") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust=0.5, size=12, face="bold")) 
+  pacf_plot <- ggPacf(ts$sales, lag.max=maxlag, ci=0.95) + 
+    ylim(c(lower_ylim, 1)) +
+    geom_point(aes(x=lag, y=Freq), color="blue", shape=21, size=1.5, stroke=1.5, fill="white") +
+    labs(y="", title="Partial Autocorrelation (for AR component)") +
+    theme_minimal() +
+    theme(plot.title = element_text(hjust=0.5, size=12, face="bold"))
+  
+  #arrange plots with patchwork::
+  p / (acf_plot + pacf_plot) 
+  
+}
+
+
 ####################################################################################
 
 
@@ -259,7 +357,7 @@ ui <- fluidPage(
                         titlePanel("Trend Analysis"),
                         sidebarPanel(
                           sliderInput(inputId = "slider_trendanalysis", 
-                                      label = h3("Window length <i>k</i> (days)"), 
+                                      label = h3(HTML(paste0("Window length ", "<i>", "k", "</i>", " (days)"))), 
                                       min = 1, max = 365, 
                                       value = 30),
                           radioButtons(inputId = "radio_trendanalysis", 
@@ -326,20 +424,33 @@ ui <- fluidPage(
                                         min = 0, max = 365,
                                         value = 30),
                             hr(),
-                            titlePanel("Stabilize the Mean (lag = 1 day)"),
+                            titlePanel("Stabilize the Mean"),
+                            helpText(HTML(paste0("Differencing the mean with ", "<i>", "lag", "</i>", " = 1 day."))),
                             materialSwitch(inputId = "switch_station",
-                                           status = "success",
-                                           label = "Yes")
+                                           status = "info",
+                                           label = "Apply lag")
                           ),
                           mainPanel(
-                            plotOutput(""),
-                            plotOutput("")
+                            plotOutput("station_test_plot"),
                           )
                         )
                         
                ), # tabpanel
                tabPanel("Seasonality", fluid = TRUE,
                         titlePanel("Time Series Decomposition"),
+                        sidebarPanel(
+                          checkboxGroupInput(inputId = "checkbox_season",
+                                             label = h3("Series Components"),
+                                             choices = c("Original",
+                                                         "Trend",
+                                                         "Seasonal",
+                                                         "Residual"),
+                                             selected = "Residual"),
+                          helpText(h2("NOTE TO SELF: the checkboxgroups would probably look better sitting above the plot vs. to the left."))
+                        ),
+                        mainPanel(
+                          plotOutput("season_plot")
+                        )
                         
                ) # tabPanel
                
@@ -448,9 +559,155 @@ server <- function(input, output) {
   ## Stationarity Test
   
   # Augmented Dickey-Fuller Test
+  output$station_test_plot <- renderPlot({
+    if (!input$switch_station) {
+      plot_stationarity_test(ts, 
+                             sample = input$slider_station1, 
+                             maxlag = input$slider_station2)
+    } else {
+      # Stabilize the mean by differencing the ts
+      lag_ts_react <- reactive({
+        lag_ts_pre <- ts %>% 
+          mutate_all(lag,n=1)
+        lag_ts_pre$sales <- ts$sales - lag_ts_pre$sales
+        lag_ts_pre$date <- ts$date
+        lag_ts <- lag_ts_pre[rowSums(is.na(lag_ts_pre))==0,]
+      })
+      plot_stationarity_test(lag_ts_react(), 
+                             sample = input$slider_station1,
+                             maxlag = input$slider_station2)
+    }
+  })
+  
+  ## Seasonality/Decomposition
+  
+  ts$sales %.>% 
+    { units <- ts(., frequency = 7) } %.>%   #weekly seasonality
+    { decomp <- reactive({
+        stl(., s.window='periodic')
+    }) } 
+  
+  # Original Plot
+  original_plt_react <- reactive({
+    ggplot(ts, aes(x=date, y=sales)) +
+      geom_line(color="#006699") +
+      theme_4panel +
+      labs(title="Original Series") +
+      date_breaks_4panel
+  })
+  
+  # Trend Plot
+  trend_plt_react <- reactive({
+    decomp() %.>%
+      { .$time.series[,2] } %.>%
+      { trend <- cbind(data.frame(.), ts$date) } %.>%
+      { colnames(trend) <- c("trend", "date") } %.>%
+        ggplot(trend, aes(x=date, y=trend)) %.>%
+          geom_line(color="#006699") %.>%
+          theme_4panel %.>%
+          labs(title="Trend") %.>%
+          date_breaks_4panel
+  })
+  
+  # Seasonal Plot
+  seasonal_plt_react <- reactive({
+    decomp() %.>%
+      { .$time.series[,1] } %.>%
+      { seasonal <- cbind(data.frame(.), ts$date) } %.>%
+      { colnames(seasonal) <- c("seasonal", "date") } %.>%
+        ggplot(seasonal, aes(x=date, y=seasonal)) %.>%
+          geom_line(color="#006699") %.>%
+          theme_4panel %.>%
+          labs(title="Seasonal") %.>%
+          date_breaks_4panel
+  })
+  
+  # Residual Plot
+  residual_plt_react <- reactive({ 
+    decomp() %.>%
+      { .$time.series[,3] } %.>%
+      { residual <- cbind(data.frame(.), ts$date) } %.>%
+      { colnames(residual) <- c("residual", "date") } %.>%
+        ggplot(residual, aes(x=date, y=residual)) %.>%
+          geom_line(color="#006699") %.>%
+          theme_minimal() %.>%
+          labs(title="Residual") %.>%
+          theme(axis.title.y = element_blank(),
+                plot.title = element_text(hjust=0.5, vjust=-.5, size=10),
+                plot.margin = unit(c(0,0,0,0), "cm"),
+                panel.border = element_rect(color="black", fill=NA, size=.5)) %.>%
+          scale_x_date(breaks = as.Date(c("2013-01-01", "2013-05-01", "2013-09-01",
+                                          "2014-01-01", "2014-05-01", "2014-09-01",
+                                          "2015-01-01", "2015-05-01", "2015-09-01")),
+                       date_labels = "%Y-%m")   #unfortunately can't get date_breaks = "4 months" to pull correct labels
+  })
+    
   
   
-  # Stabalize the Mean
+  # output$season_plot <- renderPlot({
+  #   if (input$checkbox_season %in% all(c("Original","Trend","Seasonal","Residual"))) {
+  #     # combined figure using patchwork::
+  #     original_plt_react() /
+  #     trend_plt_react() /
+  #     seasonal_plt_react() /
+  #     residual_plt_react()
+  #   } else if (input$checkbox_season %in% "Trend") {
+  #       trend_plt_react()
+  #   } else if (input$checkbox_season %in% "Seasonal") {
+  #       seasonal_plt_react()
+  #   } else if (input$checkbox_season %in% "Residual") {
+  #       residual_plt_react()
+  #   } else {
+  #       original_plt_react()
+  #   }
+  # })
+
+  output$season_plot <- renderPlot({
+    seasonPlot_checkbox_filter <- function(x) {
+      op_cnt = 0
+      tp_cnt = 0
+      sp_cnt = 0
+      rp_cnt = 0
+      for (i in 1:length(x)) {
+        if (x[i] == "Original") {
+          op <- original_plt_react()
+          op_cnt <- op_cnt + 1
+        } else if (x[i] == "Trend") {
+          tp <- trend_plt_react()
+          tp_cnt <- tp_cnt + 1
+        } else if (x[i] == "Seasonal") {
+          sp <- seasonal_plt_react()
+          sp_cnt <- sp_cnt + 1
+        } else if (x[i] == "Residual") {
+          rp <- residual_plt_react()
+          rp_cnt <- rp_cnt + 1
+        }
+      }
+      # Plot chart combinations
+      if(length(x) == 4) original_plt_react()/trend_plt_react()/seasonal_plt_react()/residual_plt_react() else
+      if(length(x) == 3 & op_cnt == 0) trend_plt_react()/seasonal_plt_react()/residual_plt_react() else
+        if(length(x) == 3 & sp_cnt == 0) original_plt_react()/trend_plt_react()/residual_plt_react() else
+          if(length(x) == 3 & tp_cnt == 0) original_plt_react()/seasonal_plt_react()/residual_plt_react() else
+            if(length(x) == 3 & rp_cnt == 0) original_plt_react()/seasonal_plt_react()/trend_plt_react() else
+      if(length(x) == 2 & op_cnt == 1 & tp_cnt == 1) original_plt_react()/trend_plt_react() else
+        if(length(x) == 2 & op_cnt == 1 & sp_cnt == 1) original_plt_react()/seasonal_plt_react() else
+          if(length(x) == 2 & op_cnt == 1 & rp_cnt == 1) original_plt_react()/residual_plt_react() else
+            if(length(x) == 2 & tp_cnt == 1 & sp_cnt == 1) trend_plt_react()/seasonal_plt_react() else
+              if(length(x) == 2 & tp_cnt == 1 & rp_cnt == 1) trend_plt_react()/residual_plt_react() else
+                if(length(x) == 2 & sp_cnt == 1 & rp_cnt == 1) seasonal_plt_react()/residual_plt_react() else
+      if(length(x) == 1 & op_cnt == 1) original_plt_react() else
+        if(length(x) == 1 & tp_cnt == 1) trend_plt_react() else
+          if(length(x) == 1 & sp_cnt == 1) seasonal_plt_react() else
+            if(length(x) == 1 & rp_cnt == 1) residual_plt_react() else
+              print('Select one or more plot elements')
+      
+    }
+    if (length(input$checkbox_season) > 0) {
+      seasonPlot_checkbox_filter(input$checkbox_season)
+    }
+    
+  })
+  
   
 }
 
