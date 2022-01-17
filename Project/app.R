@@ -1,6 +1,9 @@
 ##### Load R packages
+
+# For Shiny app
 library(shiny)
 library(shinythemes)
+library(shinyWidgets)
 
 # For outlier detection
 library(e1071)
@@ -256,7 +259,7 @@ ui <- fluidPage(
                         titlePanel("Trend Analysis"),
                         sidebarPanel(
                           sliderInput(inputId = "slider_trendanalysis", 
-                                      label = h3("Window length (k = days)"), 
+                                      label = h3("Window length <i>k</i> (days)"), 
                                       min = 1, max = 365, 
                                       value = 30),
                           radioButtons(inputId = "radio_trendanalysis", 
@@ -272,24 +275,35 @@ ui <- fluidPage(
                ), # tabpanel
                
                tabPanel("Outliers", fluid = TRUE,
+                        titlePanel("Outlier Detection"),
                         sidebarLayout(
                           sidebarPanel(
-                            titlePanel("Outlier Detection with Support Vector Machines"),
-                            fluidRow(
-                              radioButtons(inputId = "radio_outliers1", 
-                                           label = h3("Distribution Plots"),
-                                           choices = c("Histogram",
-                                                       "Density Function",
-                                                       "Box & Whiskers")),
-                              sliderInput(inputId = "slider_outliers",
-                                          label = h3("Threshold (%)"),
-                                          min = 0.0, max = 1.0,
-                                          value = 0.05),
-                              radioButtons(inputId = "radio_outliers2",
-                                           label = h3("Treatment of Outliers"),
-                                           choices = c("Detect", 
-                                                       "Remove"))
-                            )
+                            radioButtons(inputId = "radio_outliers1", 
+                                         label = h3("Distribution Plots"),
+                                         choices = c("Histogram",
+                                                     "Density Function",
+                                                     "Box & Whiskers")),
+                            hr(),
+                            titlePanel("Support Vector Machine"),
+                            knobInput(inputId = "slider_outliers",
+                                      label = h3("Threshold (%)"),
+                                      min = 1, max = 100,
+                                      value = 5,
+                                      displayPrevious = TRUE,
+                                      lineCap = "round",
+                                      fgColor = "#428BCA",
+                                      inputColor = "#428BCA"),
+                            # sliderInput(inputId = "slider_outliers",
+                            #             label = h3("Threshold (%)"),
+                            #             min = 0.0, max = 1.0,
+                            #             value = 0.05),
+                            radioButtons(inputId = "radio_outliers2",
+                                         label = h3("Treatment of Outliers"),
+                                         choices = c("Detect", 
+                                                     "Remove")),
+                            helpText("Note: Algorithm can detect outliers at any threshold,
+                                     however, removing them using a threshold > 15% will
+                                     break it.")
                           ),
                           mainPanel(
                             plotOutput("outlier_dist_plot"),
@@ -300,7 +314,28 @@ ui <- fluidPage(
                ), # tabPanel
                
                tabPanel("Stationarity", fluid = TRUE,
-                        titlePanel("Stationarity Test"),
+                        titlePanel("Augmented Dickey-Fuller Test"),
+                        sidebarLayout(
+                          sidebarPanel(
+                            sliderInput(inputId = "slider_station1",
+                                        label = h3("Sample (%)"),
+                                        min = 0.0, max = 1.0,
+                                        value = 0.2),
+                            sliderInput(inputId = "slider_station2",
+                                        label = h3("Max lag (days)"),
+                                        min = 0, max = 365,
+                                        value = 30),
+                            hr(),
+                            titlePanel("Stabilize the Mean (lag = 1 day)"),
+                            materialSwitch(inputId = "switch_station",
+                                           status = "success",
+                                           label = "Yes")
+                          ),
+                          mainPanel(
+                            plotOutput(""),
+                            plotOutput("")
+                          )
+                        )
                         
                ), # tabpanel
                tabPanel("Seasonality", fluid = TRUE,
@@ -388,11 +423,14 @@ server <- function(input, output) {
   })
   
   # Detect/Remove Outliers
+  slider_outliers_react <- reactive ({
+    input$slider_outliers/100
+  })
   output$outlier_svm_plot <- renderPlot({
     if (input$radio_outliers2 == "Remove") {
       # detect outliers
       ts_outliers_react <- reactive({
-        detect_outliers(ts, perc = input$slider_outliers)
+        detect_outliers(ts, perc = slider_outliers_react())
       })
       # outliers' index position
       outliers_index_pos_react <- reactive({
@@ -403,9 +441,16 @@ server <- function(input, output) {
     } else {
       detect_outliers(ts, return_df = FALSE,
                       gamma = 0.01,
-                      perc = input$slider_outliers)
+                      perc = slider_outliers_react())
     }
   })
+  
+  ## Stationarity Test
+  
+  # Augmented Dickey-Fuller Test
+  
+  
+  # Stabalize the Mean
   
 }
 
