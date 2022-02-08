@@ -4,6 +4,7 @@
 library(shiny)
 library(shinythemes)
 library(shinyWidgets)
+library(shinybusy)
 
 # For outlier detection
 library(e1071)
@@ -13,19 +14,29 @@ library(kernlab)
 library(tseries)       #adf test & ts()
 library(urca)          #adf test for cv table
 
+# For sample subsetting & forecasting
+library(forecast)     #also used for ggAcf and ggPacf plots
+library(keras)        #LSTM
+library(tensorflow)   #LSTM
+
 # For visualizations
 library(ggplot2)
+library(ggthemes)
 library(highcharter)   #htmlwidgets
 library(dygraphs)      #htmlwidgets
 library(patchwork)     #multi-panel ggplots
-library(forecast)      #ggAcf and ggPacf plots
+library(RColorBrewer)
+library(ggpmisc)       #ggplot tibbles
 
 # For gen. purposes
 library(dplyr)         #manipulation
 library(magrittr)      #pipe & subsetting secondary series w/in ggplot
-library(zoo)           #rolling stats and interpolation 
+library(zoo)           #rolling stats and interpolation; time-series object w/ 'daily' datetime index 
 library(glue)          #string magic
 library(wrapr)         #pipe ggplot layers
+library(stringr)       #string magic
+library(data.table)    #%like%
+
 
 ##### Write or amend certain operators
 
@@ -80,6 +91,24 @@ date_breaks_4panel <- scale_x_date(breaks = as.Date(c("2013-01-01", "2013-05-01"
                                                       "2014-01-01", "2014-05-01", "2014-09-01",
                                                       "2015-01-01", "2015-05-01", "2015-09-01")))
 
+# theme for forecast data objects
+theme.fxdat <- theme_gdocs() +
+  theme(plot.title = element_text(size = 15),
+        plot.subtitle = element_text(size = 11),
+        plot.caption = element_text(size = 9, hjust = 0, vjust = 0, colour = "grey50"),
+        axis.title.y = element_text(face = "bold", color = "gray30"),
+        axis.title.x = element_text(face = "bold", color = "gray30", vjust = -1),
+        panel.background = element_rect(fill = "grey95", colour = "grey75"),
+        panel.border = element_rect(colour = "grey75"),
+        panel.grid.major.y = element_line(colour = "white"),
+        panel.grid.minor.y = element_line(colour = "white", linetype = "dotted"),
+        panel.grid.major.x = element_line(colour = "white"),
+        panel.grid.minor.x = element_line(colour = "white", linetype = "dotted"),
+        strip.background = element_rect(size = 1, fill = "white", colour = "grey75"),
+        strip.text.y = element_text(face = "bold"),
+        axis.line = element_line(colour = "grey75"))
+
+
 ##### Import Data
 df <- read.csv("Data/sales_train.csv")
 
@@ -88,15 +117,25 @@ df <- read.csv("Data/sales_train.csv")
 df$date <- as.Date(df$date, "%d.%m.%Y")
 
 # Create time series
-ts <- df %>%
+ts_df <- df %>%
   group_by(date) %>%
   summarise(sales = sum(item_cnt_day))
+
+## Create time-series objects 
+#zoo: no forced seasonality, good w/ daily data
+z_ts <- read.zoo(ts_df, format="%Y-%m-%d")     
+#ts; forced seasonality, crap with daily data (needed for 's' in auto.arima())
+ts <- ts(ts_df$sales, start=as.Date("2013-01-01"), frequency = 7)  
+#msts; account for multiple seasonal patterns (needed for TBATS)
+ms_ts <- msts(ts_df$sales, seasonal.periods = c(7,365.25))  
 
 
 ##### User-Defined Functions
 
 ## Function to create a trends plot with rolling statistics (mean, CI)
-trendy_plot <- function (ts, plot_ma=TRUE, plot_intervals=TRUE, window=5) {
+trendy_plot <- function (ts_df, plot_ma=TRUE, plot_intervals=TRUE, window=5) {
+  
+  ts <- ts_df
   
   rolling_avg <- zoo::rollmean(ts$sales, k=window, align="right")
   rolling_std <- zoo::rollapply(ts$sales, width=window, sd, align="right")
@@ -135,7 +174,9 @@ trendy_plot <- function (ts, plot_ma=TRUE, plot_intervals=TRUE, window=5) {
 
 
 ## Function to detect outliers using SVM
-detect_outliers <- function (ts, perc=0.01, gamma=0.01, return_df=TRUE, plot_ts=TRUE) {
+detect_outliers <- function (ts_df, perc=0.01, gamma=0.01, return_df=TRUE, plot_ts=TRUE) {
+  
+  ts <- ts_df
   
   # train a one-class SVM model
   model <- ksvm(ts$sales, nu=perc, type='one-svc', kernel='rbfdot', 
@@ -187,7 +228,9 @@ detect_outliers <- function (ts, perc=0.01, gamma=0.01, return_df=TRUE, plot_ts=
 
 
 ## Function to interpolate outliers for removal
-remove_outliers <- function (ts, outliers_idx, ts_outliers, return_df = TRUE, plot_ts = TRUE) {
+remove_outliers <- function (ts_df, outliers_idx, ts_outliers, return_df = TRUE, plot_ts = TRUE) {
+  
+  ts <- ts_df
   
   ts_clean <- ts
   ts_clean$sales[outliers_idx] <- NA
@@ -219,7 +262,9 @@ remove_outliers <- function (ts, outliers_idx, ts_outliers, return_df = TRUE, pl
 
 
 ## Function to visualize stats and partial/autocorrelation and run ADF test
-plot_stationarity_test <- function (ts, sample=0.20, maxlag=30) {
+plot_stationarity_test <- function (ts_df, sample=0.20, maxlag=30) {
+  
+  ts <- ts_df
   
   # test stationarity (Augmented Dickey-Fuller test)
   test <- adf.test(ts$sales, k=maxlag)
@@ -281,6 +326,30 @@ plot_stationarity_test <- function (ts, sample=0.20, maxlag=30) {
   
 }
 
+
+## Function to split ts and output train and test sets (can be used in-line)
+train_test_split <- function (ts, split_perc=0.85, out.train=F, 
+                              out.test=F, full_df=F, ts_col=NULL) {
+  
+  # input either ts object or ts df
+  if (full_df) {
+    train <- head(ts, round(length(ts_col) * split_perc))      
+    h <- length(ts_col) - round(length(ts_col) * split_perc)
+    test <- tail(ts, h) 
+  } else {
+    train <- head(ts, round(length(ts) * split_perc))      
+    h <- length(ts) - length(train)
+    test <- tail(ts, h)
+  }
+  # return train or test
+  if (out.train) {
+    return(train)
+  } 
+  if (out.test) {
+    return(test)
+  }
+  
+}
 
 ####################################################################################
 
@@ -456,8 +525,39 @@ ui <- fluidPage(
                
     ), # Time Series Analysis, navbarMenu
     
-    tabPanel("Model Design & Testing", fluid = TRUE, icon = icon('chart-bar'),
-             "This panel is intentionally left blank"),
+    navbarMenu("Model Design & Testing", icon = icon('chart-bar'),
+               tabPanel("Train-Test Split & Dry Forecast", fluid = TRUE,
+                        titlePanel("Train-Test Split"),
+                        fluidRow(
+                          column(4,
+                                 sliderInput(inputId = "slider_traintest",
+                                             label = h3("Training set (%)"),
+                                             min = 1, max = 100,
+                                             value = 85)
+                          ),
+                          column(5,
+                                 materialSwitch(inputId = "switch_traintest",
+                                                status = "info",
+                                                label = h3("Forecast"))
+                                 ),
+                          column(5,
+                                 helpText("Note: The stepwise algorithm for autoarima() can take up to 30 seconds to complete iterations.")
+                          )
+                        ),
+                        titlePanel("Sample Split"),
+                        plotOutput("traintest_plot1"),
+                        hr(),
+                        titlePanel("Forecast with Stepwise ARIMA"),  # MIGHT NOT ACTUALLY NEED THIS TITLE
+                        plotOutput("traintest_plot2")
+                        
+               ), # tabPanel
+               
+               tabPanel("PLACEHOLDER"), # tabPanel
+               tabPanel("PLACEHOLDER") # tabPanel
+               
+    ), # Model Desing & Testing, navbarMenu
+    
+
     tabPanel("My Analysis", fluid = TRUE, icon = icon('chart-line'),
              "This panel is intentionally left blank")
     
@@ -474,7 +574,7 @@ server <- function(input, output) {
   
   # basic ts plot
   output$plt_ts <- renderPlot({
-    ggplot(ts, aes(x=date, y=sales)) +
+    ggplot(ts_df, aes(x=date, y=sales)) +
       geom_line(color="black", size=.75) +
       theme_minimal() +
       labs(x="", y="", title="Total Daily Sales, USD (2013-15)") +
@@ -493,7 +593,7 @@ server <- function(input, output) {
   ## Trends
   
   output$trends_plot <- renderPlot({
-    trendy_plot(ts, 
+    trendy_plot(ts_df, 
                 window = input$slider_trendanalysis,
                 plot_ma = (input$radio_trendanalysis %in% c("Rolling Average", "Both")),
                 plot_intervals = (input$radio_trendanalysis %in% c("Bollinger Bands", "Both")))
@@ -505,7 +605,7 @@ server <- function(input, output) {
   output$outlier_dist_plot <- renderPlot({
     if (input$radio_outliers1 == "Histogram") {
       # Plot a simple histogram & PDF/CDF
-      ts %>%
+      ts_df %>%
         ggplot(aes(sales)) +
           geom_histogram(color="turquoise4", fill="lightgreen", alpha=.5, bins=100) +
           theme_standard +
@@ -514,7 +614,7 @@ server <- function(input, output) {
     } else if (input$radio_outliers1 == "Density Function") {
       # Plot a simple CDF/PDF
       options(scipen=10000)
-      ts %>%
+      ts_df %>%
         ggplot(., aes(sales)) + 
         geom_density(color="turquoise4", fill="lightgreen", alpha=.4) +  
         theme_standard + 
@@ -522,7 +622,7 @@ server <- function(input, output) {
         labs(x="Sales ($)", y="Density", title="Daily Sales Density Function")
     } else {
       # Plot a simple boxplot
-      ts %>% 
+      ts_df %>% 
         ggplot(., aes(sales)) +  
         geom_boxplot(color="turquoise4", fill="lightgreen",
                      alpha=.4, outlier.shape = 1, outlier.color = "red") + 
@@ -541,16 +641,16 @@ server <- function(input, output) {
     if (input$radio_outliers2 == "Remove") {
       # detect outliers
       ts_outliers_react <- reactive({
-        detect_outliers(ts, perc = slider_outliers_react())
+        detect_outliers(ts_df, perc = slider_outliers_react())
       })
       # outliers' index position
       outliers_index_pos_react <- reactive({
         ts_outliers_react()[ts_outliers_react()$outlier == 1, 3] #'3' is the index column we created
       })
       # exclude outliers
-      ts_clean <- remove_outliers(ts, ts_outliers = ts_outliers_react(), outliers_idx = outliers_index_pos_react())
+      ts_clean <- remove_outliers(ts_df, ts_outliers = ts_outliers_react(), outliers_idx = outliers_index_pos_react())
     } else {
-      detect_outliers(ts, return_df = FALSE,
+      detect_outliers(ts_df, return_df = FALSE,
                       gamma = 0.01,
                       perc = slider_outliers_react())
     }
@@ -561,16 +661,16 @@ server <- function(input, output) {
   # Augmented Dickey-Fuller Test
   output$station_test_plot <- renderPlot({
     if (!input$switch_station) {
-      plot_stationarity_test(ts, 
+      plot_stationarity_test(ts_df, 
                              sample = input$slider_station1, 
                              maxlag = input$slider_station2)
     } else {
       # Stabilize the mean by differencing the ts
       lag_ts_react <- reactive({
-        lag_ts_pre <- ts %>% 
+        lag_ts_pre <- ts_df %>% 
           mutate_all(lag,n=1)
-        lag_ts_pre$sales <- ts$sales - lag_ts_pre$sales
-        lag_ts_pre$date <- ts$date
+        lag_ts_pre$sales <- ts_df$sales - lag_ts_pre$sales
+        lag_ts_pre$date <- ts_df$date
         lag_ts <- lag_ts_pre[rowSums(is.na(lag_ts_pre))==0,]
       })
       plot_stationarity_test(lag_ts_react(), 
@@ -581,7 +681,7 @@ server <- function(input, output) {
   
   ## Seasonality/Decomposition
   
-  ts$sales %.>% 
+  ts_df$sales %.>% 
     { units <- ts(., frequency = 7) } %.>%   #weekly seasonality
     { decomp <- reactive({
         stl(., s.window='periodic')
@@ -589,7 +689,7 @@ server <- function(input, output) {
   
   # Original Plot
   original_plt_react <- reactive({
-    ggplot(ts, aes(x=date, y=sales)) +
+    ggplot(ts_df, aes(x=date, y=sales)) +
       geom_line(color="#006699") +
       theme_4panel +
       labs(title="Original Series") +
@@ -600,7 +700,7 @@ server <- function(input, output) {
   trend_plt_react <- reactive({
     decomp() %.>%
       { .$time.series[,2] } %.>%
-      { trend <- cbind(data.frame(.), ts$date) } %.>%
+      { trend <- cbind(data.frame(.), ts_df$date) } %.>%
       { colnames(trend) <- c("trend", "date") } %.>%
         ggplot(trend, aes(x=date, y=trend)) %.>%
           geom_line(color="#006699") %.>%
@@ -613,7 +713,7 @@ server <- function(input, output) {
   seasonal_plt_react <- reactive({
     decomp() %.>%
       { .$time.series[,1] } %.>%
-      { seasonal <- cbind(data.frame(.), ts$date) } %.>%
+      { seasonal <- cbind(data.frame(.), ts_df$date) } %.>%
       { colnames(seasonal) <- c("seasonal", "date") } %.>%
         ggplot(seasonal, aes(x=date, y=seasonal)) %.>%
           geom_line(color="#006699") %.>%
@@ -626,7 +726,7 @@ server <- function(input, output) {
   residual_plt_react <- reactive({ 
     decomp() %.>%
       { .$time.series[,3] } %.>%
-      { residual <- cbind(data.frame(.), ts$date) } %.>%
+      { residual <- cbind(data.frame(.), ts_df$date) } %.>%
       { colnames(residual) <- c("residual", "date") } %.>%
         ggplot(residual, aes(x=date, y=residual)) %.>%
           geom_line(color="#006699") %.>%
@@ -706,6 +806,130 @@ server <- function(input, output) {
       seasonPlot_checkbox_filter(input$checkbox_season)
     }
     
+  })
+  
+  
+  ### Model Design and Testing
+  
+  ## Train-Test Split
+  
+  # Train-Test Split
+  user_def_split_react <- reactive({
+    input <- input$slider_traintest
+    input/100
+  })
+  train_react <- reactive({
+    train_test_split(ts, split_perc = user_def_split_react(), out.train=T)
+  })
+  test_react <- reactive({
+    train_test_split(ts, split_perc = user_def_split_react(), out.test=T)
+  })
+  split_perc_react <- reactive({
+    round(length(train_react())/(length(train_react())+length(test_react())), 2) #variable (subject to value ussed in train_test_split())
+  })
+  
+  output$traintest_plot1 <- renderPlot({
+    par(mfrow=c(2,1))
+    plot(train_react(), 
+         main=glue("Training Set: {100*split_perc_react()}%"), xlab="", ylab="", sub=glue("n={length(train_react())}"),
+         ylim=c(min(min(train_react()), min(test_react())),
+                max(max(train_react()), max(test_react()))))
+    plot(test_react(), 
+         main=glue("Testing Set: {100*(1-split_perc_react())}%"), xlab="", ylab="", sub=glue("n={length(test_react())}"),
+         ylim=c(min(min(train_react()), min(test_react())),
+                max(max(train_react()), max(test_react()))))
+  })
+  
+  
+  # Forecast with Stepwise ARIMA
+  output$traintest_plot2 <- renderPlot({
+    if (input$switch_traintest) {
+      show_modal_spinner()
+      fit_arima <- auto.arima(train_react(), max.order = 20, 
+                              max.p = 10, max.d = 3, max.q = 10,
+                              max.P = 10, max.D = 3, max.Q = 10,
+                              stepwise = TRUE, seasonal = TRUE, stationary = FALSE,
+                              ic = "aic", trace = TRUE)
+      remove_modal_spinner()
+      
+      # Predict next X days of sales 
+      forecast <- forecast(fit_arima, h = length(test_react()), level = c(80, 95, 99))
+      
+      ## Plot predictions with ggplot
+      # Define dataframe with training (x), forecast (y) and interval (pi) data
+      len.x <- length(forecast$x)
+      len.y <- length(forecast$mean)
+      
+      fc_df <- tibble(date = ts_df$date,
+                      x = c(forecast$x, rep(NA, len.y)),
+                      fitted = c(forecast$fitted, rep(NA, len.y)),
+                      forecasted = c(rep(NA, len.x), forecast$mean),
+                      lo.80 = c(rep(NA, len.x), forecast$lower[, 1]),
+                      up.80 = c(rep(NA, len.x), forecast$upper[, 1]),
+                      lo.95 = c(rep(NA, len.x), forecast$lower[, 2]),
+                      up.95 = c(rep(NA, len.x), forecast$upper[, 2]),
+                      lo.99 = c(rep(NA, len.x), forecast$lower[, 3]),
+                      up.99 = c(rep(NA, len.x), forecast$upper[, 3]))
+      
+      # Plot training, fitted and forecast data
+      model = glue("{stringr::str_extract(forecast$method, '[A-Z]+' )}")
+      date.breaks = "6 months"
+      date.format = "%b-%Y"
+      y.breaks = c(0, 2500, 5000, 7500, 10000, 12500)
+      line.cols = c("black", "darkcyan", "goldenrod1")
+      forecast %.>% { .$level } %.>%  length(.) %.>% 
+        { shade.cols <- brewer.pal(., "PuBuGn") }
+      main.title = glue("{model} Forecast of Daily Sales")
+      sub.title = glue("Forecast horizon: {length(test_react())} days \n
+                 Specification: {forecast$method}")
+      caption = "Data source: Kaggle.com"
+      x.title = "Date"
+      y.title = "Sales"
+      show.points = FALSE
+      if (show.points) {
+        points_set <- geom_point(data = fc_df, aes(date, forecasted, colour = "Forecast"), size = 1)
+        points_size <- geom_point(size = 1)
+      } else {
+        points_set <- NULL
+        points_size <- NULL
+      }
+      
+      ggplot(fc_df,  aes(date, x)) +
+        geom_line(aes(colour = "Training")) +
+        geom_line(data = fc_df, aes(date, fitted, colour = "Fitted"), size = 0.75) +
+        geom_ribbon(data = fc_df, aes(date, ymin = lo.99, ymax = up.99, fill = "99%")) +
+        geom_ribbon(data = fc_df, aes(date, ymin = lo.95, ymax = up.95, fill = "95%")) +
+        geom_ribbon(data = fc_df, aes(date, ymin = lo.80, ymax = up.80, fill = "80%")) +
+        geom_line(data = fc_df, aes(date, forecasted, colour = "Forecast"), size = 0.75) +
+        points_set + 
+        points_size + 
+        scale_y_continuous(breaks = y.breaks) +
+        scale_x_date(breaks = seq(fc_df$date[1], fc_df$date[length(fc_df$date)],
+                                  by = date.breaks),
+                     date_labels = date.format) +
+        scale_colour_manual(name = "Model Data",
+                            values = c("Training" = line.cols[1],
+                                       "Fitted" = line.cols[4],
+                                       "Forecast" = line.cols[3]),
+                            breaks = c("Training", "Fitted", "Forecast")) +
+        scale_fill_manual(name = "Forecast Intervals",
+                          values = c("99%" = shade.cols[1], 
+                                     "95%" = shade.cols[2],
+                                     "80%" = shade.cols[3])) +
+        guides(colour = guide_legend(order = 1), fill = guide_legend(order = 2)) +
+        labs(title = main.title,
+             subtitle = sub.title,
+             caption = caption,
+             x = x.title,
+             y = y.title) +
+        theme.fxdat +
+        theme(plot.subtitle = element_text(lineheight = 0.55)) 
+    } else {
+      y <- c(1,3,2,4,3,5,4,6,5,7)
+      x <- c(1:10)
+      plot(x,y, title("NOTE: Please select 'Forecast' above to render forecast"))
+    }
+        
   })
   
   

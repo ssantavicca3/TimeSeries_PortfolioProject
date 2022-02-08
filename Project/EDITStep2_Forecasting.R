@@ -128,10 +128,9 @@ train_test_split <- function (ts, split_perc=0.85, full_df=F, ts_col=NULL) {
   
 }  
 
-
 # Plot training and test set
-split_perc <- 0.80 #variable (subject to value ussed in train_test_split())
-par(mfrow=c(1,2))
+split_perc <- round(length(train)/(length(train)+length(test)), 2) #variable (subject to value ussed in train_test_split())
+par(mfrow=c(2,1))
 plot(train, 
      main=glue("Training Set: {100*split_perc}%"), xlab="", ylab="", sub=glue("n={length(train)}"),
      ylim=c(min(min(train), min(test)),
