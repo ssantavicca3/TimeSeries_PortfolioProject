@@ -340,8 +340,8 @@ fc_accuracy_print(test, forecast)
 ## Try TBATS model instead...
 # 'tbats' explicitly models multiple types of seasonality.
 #https://stats.stackexchange.com/questions/144158/daily-time-series-analysis
-
-train_test_split(ms_ts, split_perc = 0.85)
+train <- train_test_split(ms_ts, split_perc = 0.85, out.train = T)
+test <- train_test_split(ms_ts, split_perc = 0.85, out.test = T)
 tbats_model <- tbats(train)
 forecast <- forecast(tbats_model, h=length(test), level = c(80, 95, 99))
 plot(forecast)
@@ -404,6 +404,8 @@ plot_acf_pacf(ts_df, ci=0.95, diff=T)
 ##-----------------------------------------------------------------------------
 
 ## Manually fit the ARIMA model
+train <- train_test_split(ts, split_perc = 0.85, out.train = T)
+test <- train_test_split(ts, split_perc = 0.85, out.test = T)
 fit_arima <- arima(train,
                    order=c(2,1,0),
                    seasonal=list(order=c(2,1,0), period=7))  #pretty much trash
@@ -419,9 +421,12 @@ tsdisplay(residuals(fit_arima), lag.max=30, main='Seasonal Model Residuals')
 
 # Forecast & plot
 forecast <- forecast(fit_arima, h = length(test), level = c(80, 95, 99))
-# Execute testing functions
+# Execute testing functions (eval_forecast() and plot_eval_forecast() are defined below)
+#eval_tbl_arima <- eval_forecast(ts, forecast, test=test, train=train, console=F, return.eval_tbl=T, print.eval_tbl=F)
+#eval_tbl_arima
+eval_forecast(ts, forecast, test=test, train=train, console=T, return.eval_tbl=F, print.eval_tbl=F)
 fc_accuracy_print(test, forecast)
-eval_forecast(ts, forecast, test=test, train=train)
+plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date) 
 
 ##-----------------------------------------------------------------------------
 ## Notes:
@@ -749,7 +754,8 @@ eval_forecast <- function (ts, forecast, test=test, train=train, console=TRUE,
 eval_forecast(ms_ts, forecast, test, train, console=F, return.eval_tbl=F, print.eval_tbl = T)
 
 
-# Second, write function to fit a model (stick this in the next function or make way to merge with eval_forecast() somehow)
+
+# Second, write function to fit a model (stick this in the next function or make way to merge with eval_forecast())
 fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85, 
                    fc_len=NULL, assign_fc_obj = c(FALSE, NULL), 
                    eval_fc_output=c("report", "return fc object"),
@@ -831,13 +837,17 @@ eval_forecast(ms_ts, fc.4, test, train, console=F, assign.eval_tbl = T, eval_tbl
 
 #third merge the tables for a ggplot table comparison of model
 tbl.final <- tibble(tbl.1, tbl.2[2], tbl.3[2], tbl.4[2])
+#tbl.final <- tibble(tbl.1, tbl.2[2], tbl.4[2])
 ggplot() + geom_table_npc(data=tbl.final, label=list(tbl.final), 
                           npcx=0.5, npcy=0.5, size=4, 
                           table.theme=ttheme_gtstripes) + theme_minimal() +
   theme(plot.title = element_text(hjust=0.5, vjust=2, size=11))
 
 
-
+tbl.1
+tbl.2
+tbl.3
+tbl.4
 
 ######################################################################################################
 ##### TRY THE LSMT MODEL #####

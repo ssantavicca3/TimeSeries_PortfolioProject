@@ -351,6 +351,364 @@ train_test_split <- function (ts, split_perc=0.85, out.train=F,
   
 }
 
+
+## Function comparing the rmspe to the test mean
+fc_accuracy_print <- function (test, forecast) {
+  
+  # calculate the root mean squared prediction error
+  rmspe <- test %>%
+    {(coredata(.) - forecast$mean)^2} %>%
+    mean(.) %>%
+    sqrt(.)
+  # calculate the mean of the test set
+  test_mean <- test %>% coredata(.) %>% mean(.)
+  # calculate the test mean percentage account for by the rmspe
+  acc_perc <- round(100*(rmspe/test_mean), 1)
+  
+  # print results to console
+  str1 <- glue("With the mean daily sales across the test set of {round(test_mean,1)},
+  our RMSPE of {round(rmspe, 1)} accounts for {acc_perc}% of the 
+  test mean, which indicates that the performance of the ARIMA 
+  model here")
+  
+  if (acc_perc < 5) {
+    str2 <- "is out of this world."
+  } else if (acc_perc < 15) {
+    str2 <- "is pretty darn good."
+  } else if (acc_perc < 40) {
+    str2 <- "could be much better."
+  } else {
+    str2 <- "is basically utter garbage."
+  }
+  
+  print("Accuracy Report:")
+  cat(paste(str1, str2))
+  
+  # Plot test set vs predictions
+  acc_df <- tibble(days = 1:length(test),
+                   test = coredata(test),
+                   predictions = forecast$mean)
+  # set y.axis upper bound for custom breaks
+  if (between(max(forecast$mean), 500, 1000)) {
+    y.breaks <- scale_y_continuous(breaks = seq(0, 1000, by=(1000)/5))
+  } else if (between(max(forecast$mean), 1000, 5000)) {
+    y.breaks <- scale_y_continuous(breaks = seq(0, 5000, by=(5000)/5))
+  } else if (between(max(forecast$mean), 5000, 10000)) {
+    y.breaks <- scale_y_continuous(breaks = seq(0, 10000, by=(10000)/5))
+  } else if (max(forecast$mean) > 10000) {
+    y.breaks <- scale_y_continuous(breaks = seq(0, (max(forecast$mean) + .10*max(forecast$mean)),
+                                                by=2500))
+  }
+  # set some custom subtitle
+  sub.title = glue("Forecast horizon: {length(test)} days \n
+                 Specification: {forecast$method}")
+  
+  ggplot(acc_df, aes(x = days)) +
+    geom_line(aes(y = test, color = "Test set"), 
+              size = 1) +
+    geom_line(aes(y = predictions, color = "Predictions"), 
+              size = 1) +
+    # scale_y_continuous(breaks = c(0, 2500, 5000, 7500, 10000, 12500)) +
+    scale_colour_manual(name = "Model Data",
+                        values = c("Test set" = "darkblue",
+                                   "Predictions" = "darkorange"),
+                        breaks = c("Test set", "Predictions")) +
+    labs(title = "Test vs. Prediction",
+         subtitle = sub.title,
+         caption = glue("Predictions based on training set of n={length(train)}"),
+         x = "Days",
+         y = "Sales") +
+    theme.fxdat +
+    theme(plot.subtitle = element_text(lineheight = 0.55))   #closing gap b/w subtitles +
+  
+}
+
+
+## Function to render 4-panel plot for forecast evaluation
+plot_eval_forecast <- function(ts, forecast, test=test, train=train, og_df.date_col=NULL) {
+  
+  # construct tmp df
+  eval_df <- tibble(date = og_df.date_col,
+                    raw = ts,
+                    model = c(forecast$fitted, rep(NA, length(test))),  #NEED TO DROP/ADD THE +1 - used it for lstm
+                    forecasted = c(rep(NA, length(train)), forecast$mean))
+  # residuals
+  eval_df$residuals <- eval_df$raw - eval_df$model  #i.e., forecast$residuals
+  #eval_df$residuals <- forecast$residuals
+  eval_df$error <- eval_df$raw - eval_df$forecasted
+  eval_df$error_pct <- eval_df$error / eval_df$raw
+  
+  # kpis
+  residuals_mean <- eval_df %.>% .$residuals %.>% mean(., na.rm = T)
+  residuals_sd <- eval_df %.>% .$residuals %.>% sd(., na.rm = T)
+  error_mean <- eval_df %.>% .$error %.>% mean(., na.rm = T)
+  error_sd <- eval_df %.>% .$error %.>% sd(., na.rm = T)
+  
+  mae <- eval_df %.>% .$error %.>% abs(.) %.>% mean(., na.rm = T)
+  mape <- eval_df %.>% .$error_pct %.>% abs(.) %.>% mean(., na.rm = T)
+  mse <- eval_df %.>% .$error %.>% .^2 %.>% mean(., na.rm = T)
+  rmse <- mse %.>% sqrt(.)
+  
+  # intervals
+  eval_df$ci_lo <- eval_df$forecasted - 1.96*residuals_sd #confidence
+  eval_df$ci_up <- eval_df$forecasted + 1.96*residuals_sd 
+  eval_df$pi_lo <- eval_df$forecasted - 1.96*error_sd #prediction
+  eval_df$pi_up <- eval_df$forecasted + 1.96*error_sd
+  
+  # plot results
+  theme_4panel <- function(base_size = 12,
+                           base_family = ""){
+    theme_minimal(base_size = base_size,
+                  base_family = base_family) %+replace%
+      theme(
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust=0.5, vjust=2, size=11),
+        panel.border = element_rect(color="black", fill=NA, size=.5),
+        legend.position = NULL,
+        legend.key.size = unit(1, "lines"),
+        legend.key.height = unit(0.7, "lines"),
+        legend.key.width = unit(0.7, "lines"),
+        legend.margin = margin(0, 0.1, 0.05, 0.1, "cm"),
+        legend.background = element_rect(color = 'black', 
+                                         fill = 'white',
+                                         linetype = 'solid'),
+        legend.title = element_blank(),
+        legend.text = element_text(size = 10)
+      )
+  } #customizing theme_minimal()
+  
+  #...training
+  p1 <- ggplot(eval_df[1:length(train),], aes(x=date)) +
+    geom_line(aes(y=raw, color="ts"), size=1) +
+    geom_line(aes(y=model, color="model"), size=1) +
+    labs(x=NULL, y='', title='Model') +
+    scale_color_manual(name="",
+                       values=c("ts"="black",
+                                "model"="#3399FF")) +
+    #might have to automate ylim again
+    ylim(c(-500, 15000))  +
+    theme_4panel() +
+    theme(legend.position = c(.075,.89)) +
+    scale_x_date(breaks="6 months", date_labels = "%b-%Y",
+                 limits=c(eval_df$date[1], max=eval_df$date[length(train)]),
+                 expand=c(0,0)) 
+  
+  #...test
+  p2 <- ggplot(eval_df[length(train):length(eval_df$raw),], aes(x=date)) +
+    geom_ribbon(aes(ymin=pi_lo, ymax=pi_up), fill="blue", alpha=0.3) +
+    geom_ribbon(aes(ymin=ci_lo, ymax=ci_up), fill="lightblue", alpha=0.6) +
+    geom_line(aes(y=raw, color="ts"), size=1) +
+    geom_line(aes(y=forecasted, color="forecast"), size=1) +
+    labs(x='', y='', title='Forecast') +
+    scale_color_manual(name="",
+                       values=c("ts"="black",
+                                "forecast"="red")) +
+    ylim(c(-500, 15000)) +
+    theme_4panel() +
+    theme(legend.position = c(.91,.89)) +
+    scale_x_date(breaks="1 month", date_labels = "%b",
+                 limits=c(eval_df$date[length(train)], max=max(eval_df$date)),
+                 expand=c(0,0)) 
+  #...residuals
+  p3 <- ggplot(eval_df, aes(x=date)) +
+    geom_line(data = eval_df[1:length(train),],
+              aes(y=residuals, color="residuals"), size=1) +
+    geom_line(data = eval_df[length(train):length(eval_df$raw),],
+              aes(y=error, color="error"), size=1) +
+    labs(x='', y='', title='Residuals') +
+    scale_color_manual(name="",
+                       values=c("residuals"="#3399FF",
+                                "error"="red")) +
+    theme_4panel() +
+    theme(legend.position = c(.095,.89)) +
+    scale_x_date(breaks="6 months", date_labels = "%b-%Y",
+                 limits=c(eval_df$date[1], max=max(eval_df$date)),
+                 expand=c(0,0)) 
+  #...residuals distribution
+  p4 <- ggplot(eval_df) +
+    geom_density(data = eval_df[length(train):length(eval_df$raw),],
+                 aes(x=error, color="error"), alpha=0.1, size=1, fill="red") +
+    geom_density(data = eval_df[1:length(train),],
+                 aes(x=residuals, color="residuals"), alpha=0.2, size=1, fill="#3399FF") +
+    labs(x='', y='', title='Residuals Distribution') +
+    geom_vline(aes(xintercept=mean(error, na.rm=T), color="error"), 
+               size=1, linetype="dashed") +
+    geom_vline(aes(xintercept=mean(residuals, na.rm=T), color="residuals"), 
+               size=1, linetype="dashed") +
+    scale_color_manual(name="",
+                       values=c("residuals"="#3399FF",
+                                'error'="red")) +
+    scale_fill_manual(name="",
+                      values=c('residuals'="#3399FF",
+                               'error'="red")) +
+    theme_4panel() +
+    theme(legend.position = c(.905,.89))
+  
+  
+  # create subtitle reporting custom model specification
+  str_index <- function (forecast, start=NULL, stop=NULL, int=TRUE) {
+    #i=14,16,18 are standard seasonal parameters for forecast$method with ARIMA
+    if (int) {
+      as.integer(substr(forecast$method, 
+                        start=start, 
+                        stop=stop))
+    } else {
+      substr(forecast$method, 
+             start=start, 
+             stop=stop)
+    }
+    
+  }
+  
+  if (str_index(forecast, start=1, stop=5, int=F) == "ARIMA") {
+    first_s_value <- str_index(forecast, start=14,stop=14, int=F)
+    if (first_s_value != "" || !is.na(first_s_value)) {
+      #if expanding this for exogenous covariate series, condition "X" as well
+      cu.subtitle <- paste("S", sep = "", forecast$method)
+    }
+  } else {
+    cu.subtitle <- forecast$method
+  }
+  
+  # display plot panel
+  (p1 + p2) / 
+    (p3 + p4) + 
+    plot_annotation(
+      title = 'Evaluation of Model Performance', 
+      subtitle = paste('Model Specification:', sep=" ", cu.subtitle),
+      caption = glue('Training set :  n={length(train)} ({round(100*(length(train)/(length(train)+length(test))))}%)
+                   Test set :         n={length(test)} ({round(100*(length(test)/(length(train)+length(test))))}%)'),
+      theme = theme(plot.title = element_text(hjust=0.5, size=15, face="bold"),
+                    plot.subtitle = element_text(hjust=0.5, size=12)))
+  
+  # Alternative color options:
+  # darkish green: #009900
+  # good blue: #3399FF        
+  # thicker turquiose: #00CCCC
+  # deeper near-burghandy red: #CC3333
+  # brighter off-red: #FF6666
+  
+}
+
+
+# Function to evaluate algorithm performance
+eval_forecast <- function (ts, forecast, test=test, train=train, console=TRUE, 
+                           assign.eval_tbl=FALSE, eval_tbl.name="eval_tbl",
+                           print.eval_tbl=FALSE, return.eval_tbl = FALSE) {
+  
+  # construct tmp df
+  eval_df <- tibble(raw = ts,
+                    model = c(forecast$fitted, rep(NA, length(test))),   #NEED TO DROP/ADD THE +1 - used it for lstm
+                    forecasted = c(rep(NA, length(train)), forecast$mean)) 
+  # residuals
+  eval_df$residuals <- eval_df$raw - eval_df$model  #i.e., forecast$residuals
+  eval_df$error <- eval_df$raw - eval_df$forecasted
+  eval_df$error_pct <- eval_df$error / eval_df$raw
+  
+  # kpis
+  residuals_mean <- eval_df %.>% .$residuals %.>% mean(., na.rm = T)
+  residuals_sd <- eval_df %.>% .$residuals %.>% sd(., na.rm = T)
+  error_mean <- eval_df %.>% .$error %.>% mean(., na.rm = T)
+  error_sd <- eval_df %.>% .$error %.>% sd(., na.rm = T)
+  
+  mae <- eval_df %.>% .$error %.>% abs(.) %.>% mean(., na.rm = T)
+  mape <- eval_df %.>% .$error_pct %.>% abs(.) %.>% mean(., na.rm = T)
+  mse <- eval_df %.>% .$error %.>% .^2 %.>% mean(., na.rm = T)
+  rmse <- mse %.>% sqrt(.)
+  
+  # print results to console or to a table
+  #print to console
+  if (console) {
+    cat(glue("
+    ------------------------------------
+    Evaluation of Algorithm Performance
+    ------------------------------------
+    Training: 
+      residuals mean: {round(residuals_mean)}
+      sd: {round(residuals_sd)}\n
+    Test: 
+      error mean: {round(error_mean)}
+      sd: {round(error_sd)}
+      mae: {round(mae)}
+      mape: {round(mape*100)}%
+      mse: {round(mse)}
+      rmse: {round(rmse)}
+      test ratio:
+        test mean: {round(mean(test))}
+        rmse-mean ratio: {round(100*(rmse/mean(test)), 1)}%
+    ------------------------------------"))
+  } 
+  
+  #create title reporting custom model specification
+  str_index <- function (forecast, start=NULL, stop=NULL, int=TRUE) {
+    #i=14,16,18 are standard seasonal parameters for forecast$method with ARIMA
+    if (int) {
+      as.integer(substr(forecast$method, 
+                        start=start, 
+                        stop=stop))
+    } else {
+      substr(forecast$method, 
+             start=start, 
+             stop=stop)
+    }
+    
+  }
+  
+  if (str_index(forecast, start=1, stop=5, int=F) == "ARIMA") {
+    first_s_value <- str_index(forecast, start=14,stop=14, int=F)
+    if (first_s_value != "" || !is.na(first_s_value)) {
+      #if expanding this for exogenous covariate series, condition "X" as well
+      cu.subtitle <- paste("S", sep = "", forecast$method)
+    }
+  } else {
+    cu.subtitle <- forecast$method
+  }
+  
+  #create and assign table
+  eval_tbl <- tibble(
+    statistic=c("residuals_mean",
+                "residuals_sd",
+                "error_mean",
+                "error_sd",
+                "mae",
+                "mape.perc",
+                "mse",
+                "rmse",
+                "test_mean",
+                "rmse_test_mean_ratio.perc"),
+    values=c(round(residuals_mean),
+             round(residuals_sd),
+             round(error_mean),
+             round(error_sd),
+             round(mae),
+             round(mape*100),
+             round(mse),
+             round(rmse),
+             round(mean(test)),
+             round(100*(rmse/mean(test)), 1))
+  )
+  colnames(eval_tbl) <- c("Statistic", glue("{cu.subtitle}"))
+  
+  if (assign.eval_tbl) {
+    assign(eval_tbl.name, eval_tbl, envir = .GlobalEnv)
+  } #declare user-defined tibble name
+  
+  #conditioning output for a returned tibble for inline use
+  if (return.eval_tbl) {
+    return(eval_tbl)
+  }
+  
+  #conditioning output for table to plot area
+  require(ggpmisc)
+  if (print.eval_tbl) {
+    ggplot() + geom_table_npc(data=eval_tbl, label=list(eval_tbl), 
+                              npcx=0.5, npcy=0.5, size=10) + 
+      theme(plot.title = element_text(hjust=0.5, vjust=2, size=25))
+  }
+  
+}
+
 ####################################################################################
 
 
@@ -526,6 +884,14 @@ ui <- fluidPage(
     ), # Time Series Analysis, navbarMenu
     
     navbarMenu("Model Design & Testing", icon = icon('chart-bar'),
+               tabPanel("Instructions", fluid=T,
+                        titlePanel("Instructions"),
+                        h4("Step 1:  Using the 'Train-Test Split' tab, start 
+                           building your model by selecting the % of the sample 
+                           with which you will train your model."),
+                        h4("Step 2:"),
+                        h4("Step 3:")
+               ), # tabPanel
                tabPanel("Train-Test Split & Dry Forecast", fluid = TRUE,
                         titlePanel("Train-Test Split"),
                         fluidRow(
@@ -552,7 +918,53 @@ ui <- fluidPage(
                         
                ), # tabPanel
                
-               tabPanel("PLACEHOLDER"), # tabPanel
+               tabPanel("Manually Fit (S)ARIMA MODEL", fluid=T,
+                        titlePanel("Model Specification"),
+                        sidebarLayout(
+                          sidebarPanel(
+                            h4("Non-Seasonal Components"),
+                            numericInput(inputId = "ar_nonseason",
+                                         label="Autoregression order (p):",
+                                         value=0),
+                            numericInput(inputId = "diff_nonseason",
+                                         label="Degree of differencing (d):",
+                                         value=0),
+                            numericInput(inputId = "ma_nonseason",
+                                         label="Moving average order (q):",
+                                         value=0),
+                            h4("Seasonal Components"),
+                            numericInput(inputId = "ar_season",
+                                         label="Autoregression order (P):",
+                                         value=0),
+                            numericInput(inputId = "diff_season",
+                                         label="Degree of differencing (D):",
+                                         value=0),
+                            numericInput(inputId = "ma_season",
+                                         label="Moving average order (Q):",
+                                         value=0),
+                            numericInput(inputId = "period_season",
+                                         label="Seasonal period (m):",
+                                         value=0),
+                            hr(),
+                            helpText("Something informative here that can also fill out the space... OR
+                                     Paste the image of the SARIMA breakdown I saved to the folder using one
+                                     of these techniques: https://shiny.rstudio.com/articles/images.html"),
+                            
+                            # materialSwitch(inputId = "switch_arima",
+                            #                status = "info",
+                            #                label = h4("Fit Model"))
+                          ),
+                          mainPanel(
+                            #Put the "accuracy of algorithm" & "test vs. prediction" plots here
+                            verbatimTextOutput("eval_alg_arima"),
+                            hr(),
+                            plotOutput("arima_plot1")
+                          )
+                        ), # sidebarLayout
+                        hr(),
+                        #Put the 4-panel plot here
+                        plotOutput("arima_plot2")
+               ), # tabPanel
                tabPanel("PLACEHOLDER") # tabPanel
                
     ), # Model Desing & Testing, navbarMenu
@@ -931,7 +1343,41 @@ server <- function(input, output) {
     }
         
   })
+
   
+  ## Manually Fit (S)ARIMA Model
+  
+  fit_arima_react <- reactive({
+    arima(train_react(), 
+          order=c(input$ar_nonseason,
+                  input$diff_nonseason,
+                  input$ma_nonseason), 
+          seasonal=list(order=c(input$ar_season,
+                                input$diff_season,
+                                input$ma_season),
+                        period=input$period_season))
+  })
+  forecast_react <- reactive({
+    forecast(fit_arima_react(), h = length(test_react()), level = c(80, 95, 99))
+  })
+  
+  # Check to see how tight the lags are within the residual CIs (ACF/PACF)
+  #tsdisplay(residuals(fit_arima), lag.max=30, main='Seasonal Model Residuals')
+  
+  # Evaluation of Algorithm Performance
+  output$eval_alg_arima <- renderPrint({
+    eval_forecast(ts, forecast_react(), test=test_react(), train=train_react(), 
+                  console=T, return.eval_tbl=F, print.eval_tbl=F)
+  })  
+  # Test vs. Prediction 
+  output$arima_plot1 <- renderPlot({
+    fc_accuracy_print(test_react(), forecast_react())
+  })
+  # Evalutation of Model Performance
+  output$arima_plot2 <- renderPlot({
+    plot_eval_forecast(ts, forecast_react(), test_react(), train_react(), og_df.date_col = ts_df$date)
+  })
+   
   
 }
 

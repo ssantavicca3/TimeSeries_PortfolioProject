@@ -74,4 +74,5 @@ ggplot.corr <- function(data, lag.max = 24, ci = 0.95, large.sample.size = TRUE,
   cowplot::plot_grid(plot.acf, plot.pacf, nrow = numofrow)
 }
 
-p / ggplot.corr(ts$sales, lag.max = 30, ci=0.95)
+# p / ggplot.corr(ts_df$sales, lag.max = 30, ci=0.95)
+ggplot.corr(ts_df$sales, lag.max = 30, ci=0.95)
