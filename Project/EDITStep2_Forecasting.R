@@ -342,9 +342,13 @@ fc_accuracy_print(test, forecast)
 #https://stats.stackexchange.com/questions/144158/daily-time-series-analysis
 train <- train_test_split(ms_ts, split_perc = 0.85, out.train = T)
 test <- train_test_split(ms_ts, split_perc = 0.85, out.test = T)
-tbats_model <- tbats(train)
+tbats_model <- tbats(train, use.trend = NULL)
 forecast <- forecast(tbats_model, h=length(test), level = c(80, 95, 99))
-plot(forecast)
+#plot(forecast)
+      # playing around below (copy & pasted this up here on 2.10.22)
+eval_forecast(ts, forecast, test=test, train=train, console=T, return.eval_tbl=F, print.eval_tbl=F)
+fc_accuracy_print(test, forecast)
+plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date) 
 
 ############################################################################################################
 ## Try manually configuring the ARIMA model (manually select p,d,q)

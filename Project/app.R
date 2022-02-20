@@ -826,7 +826,8 @@ ui <- fluidPage(
                                          label = h3("Treatment of Outliers"),
                                          choices = c("Detect", 
                                                      "Remove")),
-                            helpText("Note: Algorithm can detect outliers at any threshold,
+                            helpText(style="text-align: justify;",
+                                     "Note: Algorithm can detect outliers at any threshold,
                                      however, removing them using a threshold > 15% will
                                      break it.")
                           ),
@@ -919,9 +920,13 @@ ui <- fluidPage(
                ), # tabPanel
                
                tabPanel("Manually Fit (S)ARIMA MODEL", fluid=T,
-                        titlePanel("Model Specification"),
+                        titlePanel("(S)ARIMA Model Specification"),
                         sidebarLayout(
                           sidebarPanel(
+                            helpText(style="text-align: justify;",
+                                     "If you have not yet selected a % of the initial data series to use for 
+                                     a training set, please return to the tab titled 'Train-Test Split & Dry Forecast' 
+                                     under the 'Model Design & Testing' dropdown menu to choose your split %."),
                             h4("Non-Seasonal Components"),
                             numericInput(inputId = "ar_nonseason",
                                          label="Autoregression order (p):",
@@ -965,12 +970,60 @@ ui <- fluidPage(
                         #Put the 4-panel plot here
                         plotOutput("arima_plot2")
                ), # tabPanel
-               tabPanel("PLACEHOLDER") # tabPanel
+               
+               tabPanel("Manually Fit (T)BATS MODEL", fluid=T,
+                        titlePanel("(T)BATS Model Specification"),
+                        sidebarLayout(
+                          sidebarPanel(
+                            helpText(style="text-align: justify;",
+                                     "If you have not yet selected a % of the initial data series to use for 
+                                     a training set, please return to the tab titled 'Train-Test Split & Dry Forecast' 
+                                     under the 'Model Design & Testing' dropdown menu to choose your split %."),
+                            selectInput(inputId = "boxcox_tbat",
+                                        label="Box-Cox transformation:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE"),
+                            selectInput(inputId = "trend_tbats",
+                                        label="Trend:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE"),
+                            selectInput(inputId = "trendDP_tbats",
+                                        label="Trend dampening parameter:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE"),
+                            selectInput(inputId = "armaErrors_tbats",
+                                        label="ARMA errors:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE"),
+                            hr(),
+                            materialSwitch(inputId = "switch_tbats",
+                                           status = "info",
+                                           label = "Auto-fit model*"),
+                            helpText(style="text-align: justify;",
+                                     "*If 'Auto-fit' model is selected then the algorithm will fit
+                                     the model with and without the parameters in question
+                                     and the 'best fit' is chosen by AIC."),
+                          ),
+                          mainPanel(
+                            #Put the "accuracy of algorithm" & "test vs. prediction" plots here
+                            verbatimTextOutput("eval_alg_tbats"),
+                            hr(),
+                            plotOutput("tbats_plot1")
+                          )
+                        ), # sidebarLayout
+                        hr(),
+                        #Put the 4-panel plot here
+                        plotOutput("tbats_plot2")
+               ), # tabPanel
                
     ), # Model Desing & Testing, navbarMenu
     
 
-    tabPanel("My Analysis", fluid = TRUE, icon = icon('chart-line'),
+    tabPanel("Model Comparisons", fluid = TRUE, icon = icon('chart-line'),
              "This panel is intentionally left blank")
     
   ) # navbarPage
@@ -1338,7 +1391,7 @@ server <- function(input, output) {
         theme(plot.subtitle = element_text(lineheight = 0.55)) 
     } else {
       y <- c(1,3,2,4,3,5,4,6,5,7)
-      x <- c(1:10)
+      x <- c('t1','t2','t3','t4','t5','t6','t7','t8','t9','t10')
       plot(x,y, title("NOTE: Please select 'Forecast' above to render forecast"))
     }
         
@@ -1357,7 +1410,7 @@ server <- function(input, output) {
                                 input$ma_season),
                         period=input$period_season))
   })
-  forecast_react <- reactive({
+  forecast_arima_react <- reactive({
     forecast(fit_arima_react(), h = length(test_react()), level = c(80, 95, 99))
   })
   
@@ -1366,18 +1419,80 @@ server <- function(input, output) {
   
   # Evaluation of Algorithm Performance
   output$eval_alg_arima <- renderPrint({
-    eval_forecast(ts, forecast_react(), test=test_react(), train=train_react(), 
+    eval_forecast(ts, forecast_arima_react(), test=test_react(), train=train_react(), 
                   console=T, return.eval_tbl=F, print.eval_tbl=F)
   })  
   # Test vs. Prediction 
   output$arima_plot1 <- renderPlot({
-    fc_accuracy_print(test_react(), forecast_react())
+    fc_accuracy_print(test_react(), forecast_arima_react())
   })
-  # Evalutation of Model Performance
+  # Evaluation of Model Performance
   output$arima_plot2 <- renderPlot({
-    plot_eval_forecast(ts, forecast_react(), test_react(), train_react(), og_df.date_col = ts_df$date)
+    plot_eval_forecast(ts, forecast_arima_react(), test_react(), train_react(), og_df.date_col = ts_df$date)
   })
    
+  
+  
+  ## Manually Fit (T)BATS Model
+  
+  input_boxcox_tbats_react <- reactive({
+    if (identical(input$boxcox_tbats, "TRUE"))
+      TRUE
+    else
+      FALSE
+  })
+  input_trend_tbats_react <- reactive ({
+    if (identical(input$trend_tbats, "TRUE")) 
+      TRUE
+    else if (identical(input$trend_tbats, "FALSE")) 
+      FALSE
+  })
+  input_trendDP_tbats_react <- reactive({
+    if (identical(input$trendDP_tbats, "TRUE"))
+      TRUE
+    else
+      FALSE
+  })
+  input_armaErrors_tbats_react <- reactive ({
+    if (identical(input$armaErrors_tbats, "TRUE")) 
+      TRUE
+    else if (identical(input$armaErrors_tbats, "FALSE")) 
+      FALSE
+  })
+  
+  fit_tbats_react <- reactive({
+    if (input$switch_tbats) {
+      show_modal_spinner()
+      fit_tbats <- tbats(train_react())
+      remove_modal_spinner()
+    }
+    else {
+      fit_tbats <-  tbats(train_react(),
+                          use.box.cox = input_boxcox_tbats_react(),
+                          use.trend = input_trend_tbats_react(),
+                          use.damped.trend = input_trendDP_tbats_react(),
+                          use.arma.errors = input_armaErrors_tbats_react())
+    }
+    fit_tbats
+  })
+  forecast_tbats_react <- reactive({
+    forecast(fit_tbats_react(), h = length(test_react()), level = c(80, 95, 99))
+  })
+  
+  # Evaluation of Algorithm Performance
+  output$eval_alg_tbats <- renderPrint({
+    eval_forecast(ts, forecast_tbats_react(), test=test_react(), train=train_react(), 
+                  console=T, return.eval_tbl=F, print.eval_tbl=F)
+  })  
+  # Test vs. Prediction 
+  output$tbats_plot1 <- renderPlot({
+    fc_accuracy_print(test_react(), forecast_tbats_react())
+  })
+  # Evaluation of Model Performance
+  output$tbats_plot2 <- renderPlot({
+    plot_eval_forecast(ts, forecast_tbats_react(), test_react(), train_react(), og_df.date_col = ts_df$date)
+  })
+  
   
 }
 
