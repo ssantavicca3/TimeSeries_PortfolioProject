@@ -927,6 +927,7 @@ ui <- fluidPage(
                                      "If you have not yet selected a % of the initial data series to use for 
                                      a training set, please return to the tab titled 'Train-Test Split & Dry Forecast' 
                                      under the 'Model Design & Testing' dropdown menu to choose your split %."),
+                            hr(),
                             h4("Non-Seasonal Components"),
                             numericInput(inputId = "ar_nonseason",
                                          label="Autoregression order (p):",
@@ -950,14 +951,23 @@ ui <- fluidPage(
                             numericInput(inputId = "period_season",
                                          label="Seasonal period (m):",
                                          value=0),
-                            hr(),
-                            helpText("Something informative here that can also fill out the space... OR
-                                     Paste the image of the SARIMA breakdown I saved to the folder using one
-                                     of these techniques: https://shiny.rstudio.com/articles/images.html"),
-                            
-                            # materialSwitch(inputId = "switch_arima",
-                            #                status = "info",
-                            #                label = h4("Fit Model"))
+                            hr()
+                            #Put option to save model here
+                            # div(
+                            #   style="display:inline-block",
+                            #   textInput((inputId = 'name_arima_model'),
+                            #             label = 'Name your model',
+                            #             width = 200)
+                            # ),
+                            # div(
+                            #   style="display:inline-block", 
+                            #   actionButton((inputId = 'select_arima_model'),
+                            #                icon = icon('save'), 
+                            #                label = 'Save Model')
+                            # ),
+                            # helpText("Something informative here that can also fill out the space... OR
+                            #          Paste the image of the SARIMA breakdown I saved to the folder using one
+                            #          of these techniques: https://shiny.rstudio.com/articles/images.html")
                           ),
                           mainPanel(
                             #Put the "accuracy of algorithm" & "test vs. prediction" plots here
@@ -979,6 +989,7 @@ ui <- fluidPage(
                                      "If you have not yet selected a % of the initial data series to use for 
                                      a training set, please return to the tab titled 'Train-Test Split & Dry Forecast' 
                                      under the 'Model Design & Testing' dropdown menu to choose your split %."),
+                            hr(),
                             selectInput(inputId = "boxcox_tbat",
                                         label="Box-Cox transformation:",
                                         choices = list("TRUE",
@@ -1007,6 +1018,20 @@ ui <- fluidPage(
                                      "*If 'Auto-fit' model is selected then the algorithm will fit
                                      the model with and without the parameters in question
                                      and the 'best fit' is chosen by AIC."),
+                            hr()
+                            #Put option to save model here
+                            # div(
+                            #   style="display:inline-block",
+                            #   textInput((inputId = 'name_tbats_model'),
+                            #             label = 'Name your model',
+                            #             width = 200)
+                            # ),
+                            # div(
+                            #   style="display:inline-block", 
+                            #   actionButton((inputId = 'select_tbats_model'),
+                            #                icon = icon('save'), 
+                            #                label = 'Save Model')
+                            # )
                           ),
                           mainPanel(
                             #Put the "accuracy of algorithm" & "test vs. prediction" plots here
@@ -1024,7 +1049,21 @@ ui <- fluidPage(
     
 
     tabPanel("Model Comparisons", fluid = TRUE, icon = icon('chart-line'),
-             "This panel is intentionally left blank")
+             titlePanel("Compare Model Accuracy Metrics"),
+             fluidRow(
+               helpText("Select models to compare accuracy metrics..."),
+               panel(h4("Your models"),
+                     )
+             ),
+             hr(),
+             titlePanel("Compare Model Performance Plots"),
+             fluidRow(
+               helpText("Select a model from those you saved during the model
+                        building process to visualize performance.")
+             ),
+             fluidRow()
+             
+    ) # Model Comparisons, tabPanel
     
   ) # navbarPage
   
@@ -1033,7 +1072,7 @@ ui <- fluidPage(
 
 ####################################################################################
 ##### Define server function
-server <- function(input, output) {
+server <- function(input, output, session) {
   
   ### Intro ()
   
@@ -1316,6 +1355,9 @@ server <- function(input, output) {
                               stepwise = TRUE, seasonal = TRUE, stationary = FALSE,
                               ic = "aic", trace = TRUE)
       remove_modal_spinner()
+      ############ Saving for model comparison ############
+      # fit_autoarima_modelcomp_react <- reactive({fit_arima})
+      ############ Saving for model comparison ############
       
       # Predict next X days of sales 
       forecast <- forecast(fit_arima, h = length(test_react()), level = c(80, 95, 99))
@@ -1391,7 +1433,7 @@ server <- function(input, output) {
         theme(plot.subtitle = element_text(lineheight = 0.55)) 
     } else {
       y <- c(1,3,2,4,3,5,4,6,5,7)
-      x <- c('t1','t2','t3','t4','t5','t6','t7','t8','t9','t10')
+      x <- c(1:10)
       plot(x,y, title("NOTE: Please select 'Forecast' above to render forecast"))
     }
         
@@ -1410,6 +1452,7 @@ server <- function(input, output) {
                                 input$ma_season),
                         period=input$period_season))
   })
+  
   forecast_arima_react <- reactive({
     forecast(fit_arima_react(), h = length(test_react()), level = c(80, 95, 99))
   })
@@ -1475,6 +1518,7 @@ server <- function(input, output) {
     }
     fit_tbats
   })
+  
   forecast_tbats_react <- reactive({
     forecast(fit_tbats_react(), h = length(test_react()), level = c(80, 95, 99))
   })
@@ -1494,9 +1538,19 @@ server <- function(input, output) {
   })
   
   
+  ### Model Comparisons
+  
+
+  
+  ## Compare Model Accuracy Metrics
+  
+  ## Compare Model Performance Plots
+  
+  
+  
 }
 
 
 ####################################################################################
-###### Create Shiny object/ Run application
+###### Create Shiny object / Run application
 shinyApp(ui = ui, server = server)

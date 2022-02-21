@@ -841,7 +841,7 @@ eval_forecast(ms_ts, fc.4, test, train, console=F, assign.eval_tbl = T, eval_tbl
 
 #third merge the tables for a ggplot table comparison of model
 tbl.final <- tibble(tbl.1, tbl.2[2], tbl.3[2], tbl.4[2])
-#tbl.final <- tibble(tbl.1, tbl.2[2], tbl.4[2])
+tbl.final <- tibble(tbl.1, tbl.2[2], tbl.4[2])
 ggplot() + geom_table_npc(data=tbl.final, label=list(tbl.final), 
                           npcx=0.5, npcy=0.5, size=4, 
                           table.theme=ttheme_gtstripes) + theme_minimal() +
@@ -853,6 +853,15 @@ tbl.2
 tbl.3
 tbl.4
 
+blah <- list(c("fc.1", fc.1), c("fc.2", fc.2))
+blah2 <- list(fc.1, fc.2)
+blah2[1]
+blah3 <- data.frame("fc.1" = I(fc.1), "fc.2" = I(fc.2))
+blah4 <- data.frame(Id = "fc.1", model = I(fc.1))
+blah5 <- rbind(blah4, data.frame(Id = "fc.2", model = I(fc.2)), data.frame(Id = 'fc.3', model = I(fc.3)))
+
+blah6 <- data.frame(I(tbats_model), I(fit_arima))
+names(blah6) <- c("tmp1", "tmp2")
 ######################################################################################################
 ##### TRY THE LSMT MODEL #####
 #http://rwanjohi.rbind.io/2018/04/05/time-series-forecasting-using-lstm-in-r/
@@ -1067,7 +1076,7 @@ eval_forecast(forecast_list$x, forecast_list, train=train, test=test)
 #       
 #        
 #        Looking at the 4-panel plot from the initial tutorial, it also looks like I'm doing something wrong
-#        with my model fitted values, becase I don't think I'm supposed to have any for the first "lagged" 
+#        with my model fitted values, because I don't think I'm supposed to have any for the first "lagged" 
 #        days of the model.
 #       
 #        All this said, if I am doing things correctly, I've been able to get visually and/or accuracy appealing
