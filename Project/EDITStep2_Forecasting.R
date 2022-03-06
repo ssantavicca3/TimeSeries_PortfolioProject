@@ -762,7 +762,7 @@ eval_forecast(ms_ts, forecast, test, train, console=F, return.eval_tbl=F, print.
 # Second, write function to fit a model (stick this in the next function or make way to merge with eval_forecast())
 fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85, 
                    fc_len=NULL, assign_fc_obj = c(FALSE, NULL), 
-                   eval_fc_output=c("report", "return fc object"),
+                   eval_fc_output=c("report", "return eval object"),
                    modelvar=c("arima","tbats"),
                    autoarima=FALSE, 
                    autoarima.spec = auto.arima(y = train, max.order = 20, 
@@ -777,8 +777,9 @@ fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85,
   
   # create the training and test sets
   if (train_test_split) {
-    train_test_split(ts, split_perc = split_perc)
-  } ### DO I NEED THE BOOLEAN HERE? i.e., SHOULDN'T I GIVE OPTION TO INPUT OWN TRAIN/TEST SETS?
+    train <- train_test_split(ts, split_perc = split_perc, out.train = T)
+    test <- train_test_split(ts, split_perc = split_perc, out.test = T)
+  } ### DO I NEED CONDITON HERE? i.e., SHOULDN'T I GIVE OPTION TO INPUT OWN TRAIN/TEST SETS?
   
   # fit the model and create forecast object
   if (modelvar == "arima") {
@@ -808,13 +809,21 @@ fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85,
   if (any(eval_fc_output %like% c("report"))) {
     eval_forecast(ts, forecast, test, train, console=T)
     plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date)
-  } # else if (any(eval_fc_output %like% "return fc object")) {
-  #   
-  # }
+  } else if (any(eval_fc_output %like% "return eval object")) {
+    eval_tbl <- eval_forecast(ts, forecast, test, train, console=F, return.eval_tbl = T)
+    return(eval_tbl)
+  }
   
 }
 
-# eg)
+# eg 1)
+blah1 <- fc_fn(ts, modelvar = "arima", eval_fc_output = "return eval object",
+      manual.arima.spec = arima(train,
+                                order=c(2,1,1), 
+                                seasonal=list(order=c(1,1,1), period=7)))
+blah1
+
+# eg 2)
 fc_fn(ts, modelvar = "arima", assign_fc_obj = c(TRUE, "fc.1"),
       manual.arima.spec = arima(train,
                                 order=c(2,1,6), 
@@ -832,6 +841,8 @@ fc_fn(ts, modelvar = "arima", assign_fc_obj = c(TRUE, "fc.1"),
 fc_fn(ts, modelvar = "arima", autoarima = TRUE, assign_fc_obj = c(TRUE, "fc.2"))
 fc_fn(z_ts, modelvar = "arima", autoarima = TRUE, assign_fc_obj = c(TRUE, "fc.3"))
 fc_fn(ms_ts, modelvar = "tbats", assign_fc_obj = c(TRUE, "fc.4"))
+
+
 
 #second generate 4 tbls (NOTE: fc.1 and tbl.1 need to be run back to back, and so on, to maintain the right train/test sets I think)
 eval_forecast(ts, fc.1, test, train,console=F, assign.eval_tbl = T, eval_tbl.name = "tbl.1")
@@ -862,6 +873,7 @@ blah5 <- rbind(blah4, data.frame(Id = "fc.2", model = I(fc.2)), data.frame(Id = 
 
 blah6 <- data.frame(I(tbats_model), I(fit_arima))
 names(blah6) <- c("tmp1", "tmp2")
+
 ######################################################################################################
 ##### TRY THE LSMT MODEL #####
 #http://rwanjohi.rbind.io/2018/04/05/time-series-forecasting-using-lstm-in-r/

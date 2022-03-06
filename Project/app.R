@@ -110,6 +110,7 @@ theme.fxdat <- theme_gdocs() +
 
 
 ##### Import Data
+
 df <- read.csv("Data/sales_train.csv")
 
 ## Create "sales" series with a daily frequency datetime index
@@ -592,7 +593,7 @@ plot_eval_forecast <- function(ts, forecast, test=test, train=train, og_df.date_
 }
 
 
-# Function to evaluate algorithm performance
+## Function to evaluate algorithm performance
 eval_forecast <- function (ts, forecast, test=test, train=train, console=TRUE, 
                            assign.eval_tbl=FALSE, eval_tbl.name="eval_tbl",
                            print.eval_tbl=FALSE, return.eval_tbl = FALSE) {
@@ -709,6 +710,64 @@ eval_forecast <- function (ts, forecast, test=test, train=train, console=TRUE,
   
 }
 
+
+# Function to fit a model and produce forecast-object based output with other user-defined functions
+fc_fn <- function (ts=ts, train_test_split = TRUE, split_perc=0.85, 
+                   fc_len=NULL, assign_fc_obj = c(FALSE, NULL), 
+                   eval_fc_output=c("report", "return eval object"),
+                   modelvar=c("arima","tbats"),
+                   autoarima=FALSE, 
+                   autoarima.spec = auto.arima(y = train, max.order = 20, 
+                                               max.p = 10, max.d = 3, max.q = 10,
+                                               max.P = 10, max.D = 3, max.Q = 10,
+                                               stepwise = TRUE, seasonal = TRUE, 
+                                               stationary = FALSE,
+                                               ic = "aic", trace = TRUE),
+                   manual.arima.spec = arima(y = train,
+                                             order=c(2,1,0)),
+                   manual.tbats.spec = tbats(y = train, trace = TRUE)) { 
+  
+  # create the training and test sets
+  if (train_test_split) {
+    train <- train_test_split(ts, split_perc = split_perc, out.train = T)
+    test <- train_test_split(ts, split_perc = split_perc, out.test = T)
+  } ### DO I NEED CONDITON HERE? i.e., SHOULDN'T I GIVE OPTION TO INPUT OWN TRAIN/TEST SETS?
+  
+  # fit the model and create forecast object
+  if (modelvar == "arima") {
+    if (autoarima == TRUE) {
+      model <- autoarima.spec
+    } else {
+      # for seasonality, include seasonal=list(order=c(w,x,y, period=z) in manual.arima.spec()
+      model <- manual.arima.spec
+    }
+  } else if (modelvar == "tbats") {
+    model <- manual.tbats.spec
+  }
+  #allowing for manual forecast horizon
+  if (is.null(fc_len)) {
+    forecast <- forecast(model, h = length(test), level = c(80, 95, 99))
+  } else {
+    forecast <- forecast(model, h = fc_len, level = c(80, 95, 99))
+  }
+  
+  # (optional) assign forecast to GlobalEnv w/ user-defined name
+  if (assign_fc_obj[1]) {
+    assign(assign_fc_obj[2], forecast, envir = .GlobalEnv)
+  }
+  
+  # (optional) console & plot output, or assign forecast object:
+  #options: c(report", "return fc object")
+  if (any(eval_fc_output %like% c("report"))) {
+    eval_forecast(ts, forecast, test, train, console=T)
+    plot_eval_forecast(ts, forecast, test, train, og_df.date_col = ts_df$date)
+  } else if (any(eval_fc_output %like% "return eval object")) {
+    eval_tbl <- eval_forecast(ts, forecast, test, train, console=F, return.eval_tbl = T)
+    return(eval_tbl)
+  }
+  
+}
+
 ####################################################################################
 
 
@@ -766,18 +825,6 @@ ui <- fluidPage(
                        )
               ) # tabPanel
     ), # navbarMenu
-    
-    tabPanel("Navbar 1", fluid = TRUE, icon = icon("balance-scale-right"),
-      sidebarPanel(
-        tags$h3("Input:"),
-        textInput("txt1", "Given Name:", ""),
-        textInput("txt2", "Surname:", "")
-      ), # sidebarPanel
-      
-      mainPanel(h1("Header 1"),
-                h4("Output 1"),
-                verbatimTextOutput("txtout")) # mainPanel
-    ), # Navbar 1, tabPanel
     
     navbarMenu("Time Series Analysis", icon = icon("balance-scale-right"),
                tabPanel("Trends", fluid = TRUE,
@@ -885,30 +932,24 @@ ui <- fluidPage(
     ), # Time Series Analysis, navbarMenu
     
     navbarMenu("Model Design & Testing", icon = icon('chart-bar'),
-               tabPanel("Instructions", fluid=T,
-                        titlePanel("Instructions"),
-                        h4("Step 1:  Using the 'Train-Test Split' tab, start 
-                           building your model by selecting the % of the sample 
-                           with which you will train your model."),
-                        h4("Step 2:"),
-                        h4("Step 3:")
-               ), # tabPanel
                tabPanel("Train-Test Split & Dry Forecast", fluid = TRUE,
                         titlePanel("Train-Test Split"),
                         fluidRow(
-                          column(4,
-                                 sliderInput(inputId = "slider_traintest",
-                                             label = h3("Training set (%)"),
-                                             min = 1, max = 100,
-                                             value = 85)
-                          ),
-                          column(5,
-                                 materialSwitch(inputId = "switch_traintest",
-                                                status = "info",
-                                                label = h3("Forecast"))
-                                 ),
-                          column(5,
-                                 helpText("Note: The stepwise algorithm for autoarima() can take up to 30 seconds to complete iterations.")
+                          panel(
+                            column(4,
+                                   sliderInput(inputId = "slider_traintest",
+                                               label = h3("Training set (%)"),
+                                               min = 1, max = 100,
+                                               value = 85)
+                            ),
+                            column(5,
+                                   materialSwitch(inputId = "switch_traintest",
+                                                  status = "info",
+                                                  label = h3("Forecast"))
+                            ),
+                            column(5,
+                                   helpText("Note: The stepwise algorithm for autoarima() can take up to 30 seconds to complete iterations.")
+                            )
                           )
                         ),
                         titlePanel("Sample Split"),
@@ -951,20 +992,7 @@ ui <- fluidPage(
                             numericInput(inputId = "period_season",
                                          label="Seasonal period (m):",
                                          value=0),
-                            hr()
-                            #Put option to save model here
-                            # div(
-                            #   style="display:inline-block",
-                            #   textInput((inputId = 'name_arima_model'),
-                            #             label = 'Name your model',
-                            #             width = 200)
-                            # ),
-                            # div(
-                            #   style="display:inline-block", 
-                            #   actionButton((inputId = 'select_arima_model'),
-                            #                icon = icon('save'), 
-                            #                label = 'Save Model')
-                            # ),
+                            #hr()
                             # helpText("Something informative here that can also fill out the space... OR
                             #          Paste the image of the SARIMA breakdown I saved to the folder using one
                             #          of these techniques: https://shiny.rstudio.com/articles/images.html")
@@ -976,9 +1004,6 @@ ui <- fluidPage(
                             plotOutput("arima_plot1")
                           )
                         ), # sidebarLayout
-                        hr(),
-                        #Put the 4-panel plot here
-                        plotOutput("arima_plot2")
                ), # tabPanel
                
                tabPanel("Manually Fit (T)BATS MODEL", fluid=T,
@@ -1015,23 +1040,9 @@ ui <- fluidPage(
                                            status = "info",
                                            label = "Auto-fit model*"),
                             helpText(style="text-align: justify;",
-                                     "*If 'Auto-fit' model is selected then the algorithm will fit
+                                     "*If 'Auto-fit model' is selected then the algorithm will fit
                                      the model with and without the parameters in question
-                                     and the 'best fit' is chosen by AIC."),
-                            hr()
-                            #Put option to save model here
-                            # div(
-                            #   style="display:inline-block",
-                            #   textInput((inputId = 'name_tbats_model'),
-                            #             label = 'Name your model',
-                            #             width = 200)
-                            # ),
-                            # div(
-                            #   style="display:inline-block", 
-                            #   actionButton((inputId = 'select_tbats_model'),
-                            #                icon = icon('save'), 
-                            #                label = 'Save Model')
-                            # )
+                                     and the 'best fit' is chosen by AIC.")
                           ),
                           mainPanel(
                             #Put the "accuracy of algorithm" & "test vs. prediction" plots here
@@ -1040,30 +1051,109 @@ ui <- fluidPage(
                             plotOutput("tbats_plot1")
                           )
                         ), # sidebarLayout
-                        hr(),
-                        #Put the 4-panel plot here
-                        plotOutput("tbats_plot2")
                ), # tabPanel
                
     ), # Model Desing & Testing, navbarMenu
     
 
-    tabPanel("Model Comparisons", fluid = TRUE, icon = icon('chart-line'),
-             titlePanel("Compare Model Accuracy Metrics"),
+    tabPanel("Model Performance", fluid = TRUE, icon = icon('chart-line'),
+             titlePanel("Specify Your Model"),
              fluidRow(
-               helpText("Select models to compare accuracy metrics..."),
-               panel(h4("Your models"),
-                     )
+               sidebarPanel(
+                 h3("Instructions:"),
+                 helpText(style="text-align: justify;",
+                          h5("First, select the percentage of the time series that you would
+                 like to devote to training your model. Next, enter values for the forecasting
+                 model parameters (i.e., specify your model). Finally, hit the 'Run' switch to 
+                 visualize your model's performance.")),
+                 hr(),
+                 sliderInput(inputId = "slider_traintest2",
+                                    label = h3("Training set (%)"),
+                                    min = 1, max = 100,
+                                    value = 85),
+                 width=2
+               ),
+               mainPanel(
+                 fluidRow(
+                   panel(
+                     column(2,
+                       h3("(S)ARIMA"),
+                       materialSwitch(inputId = "switch_arima_plot",
+                                      status = "info",
+                                      label = "Run")
+                     ),
+                     column(2,
+                            numericInput(inputId = "ar_nonseason2",
+                                         label="Autoregression order (p):",
+                                         value=0)),
+                     column(2,
+                            numericInput(inputId = "diff_nonseason2",
+                                         label="Degree of differencing (d):",
+                                         value=0)),
+                     column(2,
+                            numericInput(inputId = "ma_nonseason2",
+                                         label="Moving average order (q):",
+                                         value=0)),
+                     column(2,
+                            numericInput(inputId = "ar_season2",
+                                         label="Autoregression order (P):",
+                                         value=0)),
+                     column(2,
+                            numericInput(inputId = "diff_season2",
+                                         label="Degree of differencing (D):",
+                                         value=0)),
+                     column(2,
+                            numericInput(inputId = "ma_season2",
+                                         label="Moving average order (Q):",
+                                         value=0)),
+                     column(2,
+                            numericInput(inputId = "period_season2",
+                                         label="Seasonal period (m):",
+                                         value=0))
+                   ),
+                 ),
+                 hr(),
+                 fluidRow(
+                   panel(
+                     column(2,
+                       h3("(T)BATS"),
+                       materialSwitch(inputId = "switch_tbats_plot",
+                                      status = "info",
+                                      label = "Run")
+                     ),
+                     column(2,
+                            selectInput(inputId = "boxcox_tbat2",
+                                        label="Box-Cox transformation:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE")),
+                     column(2,
+                            selectInput(inputId = "trend_tbats2",
+                                        label="Trend:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE")),
+                     column(2,
+                            selectInput(inputId = "trendDP_tbats2",
+                                        label="Trend dampening parameter:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE")),
+                     column(2,
+                            selectInput(inputId = "armaErrors_tbats2",
+                                        label="ARMA errors:",
+                                        choices = list("TRUE",
+                                                       "FALSE"),
+                                        selected = "FALSE"))
+                   )
+                 ),
+                 width=10
+               )
              ),
-             hr(),
-             titlePanel("Compare Model Performance Plots"),
-             fluidRow(
-               helpText("Select a model from those you saved during the model
-                        building process to visualize performance.")
-             ),
-             fluidRow()
+             titlePanel("Visualize Model Performance"),
+             plotOutput("arima_or_tbats_plot")
              
-    ) # Model Comparisons, tabPanel
+    ) # Model Performance, tabPanel
     
   ) # navbarPage
   
@@ -1329,7 +1419,7 @@ server <- function(input, output, session) {
     train_test_split(ts, split_perc = user_def_split_react(), out.test=T)
   })
   split_perc_react <- reactive({
-    round(length(train_react())/(length(train_react())+length(test_react())), 2) #variable (subject to value ussed in train_test_split())
+    round(length(train_react())/(length(train_react())+length(test_react())), 2) #variable (subject to value used in train_test_split())
   })
   
   output$traintest_plot1 <- renderPlot({
@@ -1355,9 +1445,6 @@ server <- function(input, output, session) {
                               stepwise = TRUE, seasonal = TRUE, stationary = FALSE,
                               ic = "aic", trace = TRUE)
       remove_modal_spinner()
-      ############ Saving for model comparison ############
-      # fit_autoarima_modelcomp_react <- reactive({fit_arima})
-      ############ Saving for model comparison ############
       
       # Predict next X days of sales 
       forecast <- forecast(fit_arima, h = length(test_react()), level = c(80, 95, 99))
@@ -1469,11 +1556,6 @@ server <- function(input, output, session) {
   output$arima_plot1 <- renderPlot({
     fc_accuracy_print(test_react(), forecast_arima_react())
   })
-  # Evaluation of Model Performance
-  output$arima_plot2 <- renderPlot({
-    plot_eval_forecast(ts, forecast_arima_react(), test_react(), train_react(), og_df.date_col = ts_df$date)
-  })
-   
   
   
   ## Manually Fit (T)BATS Model
@@ -1532,21 +1614,116 @@ server <- function(input, output, session) {
   output$tbats_plot1 <- renderPlot({
     fc_accuracy_print(test_react(), forecast_tbats_react())
   })
-  # Evaluation of Model Performance
-  output$tbats_plot2 <- renderPlot({
-    plot_eval_forecast(ts, forecast_tbats_react(), test_react(), train_react(), og_df.date_col = ts_df$date)
+  
+  
+  ### Model Performance
+  
+  ## Set Training Split 
+  
+  user_def_split_react2 <- reactive({
+    input <- input$slider_traintest2
+    input/100
+  })
+  train_react2 <- reactive({
+    train_test_split(ts, split_perc = user_def_split_react2(), out.train=T)
+  })
+  test_react2 <- reactive({
+    train_test_split(ts, split_perc = user_def_split_react2(), out.test=T)
+  })
+  split_perc_react2 <- reactive({
+    round(length(train_react2())/(length(train_react2())+length(test_react2())), 2) #variable (subject to value used in train_test_split())
+  })
+  
+  ## (S)ARIMA
+  fit_arima_react2 <- reactive({
+    arima(train_react2(), 
+          order=c(input$ar_nonseason2,
+                  input$diff_nonseason2,
+                  input$ma_nonseason2), 
+          seasonal=list(order=c(input$ar_season2,
+                                input$diff_season2,
+                                input$ma_season2),
+                        period=input$period_season2))
+  })
+  
+  forecast_arima_react2 <- reactive({
+    forecast(fit_arima_react2(), h = length(test_react2()), level = c(80, 95, 99))
   })
   
   
-  ### Model Comparisons
+  ## (T)BATS
+  input_boxcox_tbats_react2 <- reactive({
+    if (identical(input$boxcox_tbats2, "TRUE"))
+      TRUE
+    else
+      FALSE
+  })
+  input_trend_tbats_react2 <- reactive ({
+    if (identical(input$trend_tbats2, "TRUE")) 
+      TRUE
+    else if (identical(input$trend_tbats, "FALSE")) 
+      FALSE
+  })
+  input_trendDP_tbats_react2 <- reactive({
+    if (identical(input$trendDP_tbats2, "TRUE"))
+      TRUE
+    else
+      FALSE
+  })
+  input_armaErrors_tbats_react2 <- reactive ({
+    if (identical(input$armaErrors_tbats2, "TRUE")) 
+      TRUE
+    else if (identical(input$armaErrors_tbats2, "FALSE")) 
+      FALSE
+  })
   
+  fit_tbats_react2 <- reactive({
+    fit_tbats <-  tbats(train_react2(),
+                        use.box.cox = input_boxcox_tbats_react2(),
+                        use.trend = input_trend_tbats_react2(),
+                        use.damped.trend = input_trendDP_tbats_react2(),
+                        use.arma.errors = input_armaErrors_tbats_react2())
+    fit_tbats
+  })
+  
+  forecast_tbats_react2 <- reactive({
+    forecast(fit_tbats_react2(), h = length(test_react2()), level = c(80, 95, 99))
+  })
+  
+  ## Performance Plot
+  
+  output$arima_or_tbats_plot <- renderPlot({
+    
+    if (!input$switch_arima_plot & !input$switch_tbats_plot) {
+      fit_arima <- arima(train_react2(), 
+                         order=c(0,0,0), 
+                         seasonal=list(order=c(0,0,0),period=0))
+      
+      forecast_arima <- forecast(fit_arima, h = length(test_react2()), level = c(80, 95, 99))
 
+      plot_eval_forecast(ts, forecast_arima_react2(), test_react2(), train_react2(), og_df.date_col = ts_df$date)
+      
+    } else if (input$switch_arima_plot) {
+      plot_eval_forecast(ts, 
+                         forecast_arima_react2(), 
+                         test_react2(), 
+                         train_react2(), 
+                         og_df.date_col = ts_df$date,
+                         console=FALSE)
+    } else if (input$switch_tbats_plot) {
+      plot_eval_forecast(ts, 
+                         forecast_tbats_react2(), 
+                         test_react2(), 
+                         train_react2(), 
+                         og_df.date_col = ts_df$date,
+                         console=FALSE)
+    }
+    
+  })
   
-  ## Compare Model Accuracy Metrics
   
-  ## Compare Model Performance Plots
-  
-  
+  #slider_traintest2
+  #switch_outliers2
   
 }
 
