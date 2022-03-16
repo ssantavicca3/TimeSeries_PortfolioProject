@@ -786,42 +786,98 @@ ui <- fluidPage(
                         ),
                         fluidRow(
                           column(6,
-                                 h4(p("Title 1")),
-                                 h5(p("Subtitle"),
-                                    p("something 1"),
-                                    p("something 2")
-                                 )
+                                 tags$b(h4("BACKGOUND")),
+                                 p(style="text-align: justify;",
+                                  "I have been utilizing R sporadically since 2016 for various work and academic projects, but I incurred 
+                                   several months without doing so, and several more learning Python. Additionally, I had only scraped the 
+                                   surface of forecasting methods during my secondary and post-seconday education in economics, 
+                                   yet the tool set was one that greatly interested me."),
+                                 tags$b(h4("INSPIRATION")),
+                                 p(style="text-align: justify;",
+                                   "I stumbled across a great read on Towards Data Science by Mauro Di Pietro titled 'Time Series Analysis for 
+                                   Machine Learning.' In this article, Mauro follows a typical time-series analysis of a dataset from the Kaggle
+                                   competition 'Predict Future Sales' and uses Python as his language of choice.")
                           ),
                           column(6,
-                                 h4(p("Title 2")),
-                                 h5(p("Something 1")
+                                 tags$b(h4("MY GOALS")),
+                                 tags$ul(
+                                   tags$li("Brush up on and further develop my skills in R statistical programming while reinforcing new skills in Python"),
+                                   tags$li("Properly introduce myself to time series analysis and ML forecasting."),
+                                   tags$li("Experiment with different plot methods and themes."),
+                                   tags$li("Automate certain forecasting analysis processes by manipulating R forecasting objects."),
+                                   tags$li("Create interactive web application to allow users to access the full process, from 
+                                           time series analysis to model design and testing for forecasting.")
                                  )
                           )
+                        ),
+                        hr(),
+                        panel(
+                          tags$b(h4("SOURCES")),
+                          tags$ul(
+                            tags$li(tags$a(href="https://towardsdatascience.com/time-series-analysis-for-machine-learning-with-python-626bee0d0205",
+                                           tags$i("Time Series Analysis for Machine Learning"))),
+                            tags$li(tags$a(href="https://www.kaggle.com/c/competitive-data-science-predict-future-sales",
+                                           "Predict Future Sales, Kaggle Competition")),
+                            tags$li(tags$a(href="https://rh8liuqy.github.io/ACF_PACF_by_ggplot2.html",
+                                           "ACF and PACF Correlogram, rh8liugy, github")),
+                            tags$li(tags$a(href="http://applied-r.com/plotting-forecast-data-objects-ggplot/",
+                                           "Custom ggplot theme for forecasting data objects, Brad Horn, applied-R"))
+                          )
                         )
+                        
                ), # tabpanel
               tabPanel("Overview", fluid = TRUE,
                        fluidRow(
                          h3(p("Project Overview")),
-                         h4(p("The Series"))
                        ),
                        fluidRow(
                          plotOutput("plt_ts")
                        ),
                        fluidRow(
-                         column(6,
-                                h4(p("Outline")),
-                                h5(p("Step 1"),
-                                   p("Step 2"),
-                                   p("Step 3")
-                                )
-                         ),
-                         column(6,
-                                h4(p("Outline")),
-                                h5(p("Step 1"),
-                                   p("Step 2"),
-                                   p("Step 3")
-                                )
+                         h4("INSTRUCTIONS"),
+                         p(style="text-align: justify;",
+                           "This web application allows you to experiment and interact with each step of the forecasting process."),
+                         p(style="text-align: justify;",
+                           "First you will explore the different stages of a standard time series analysis. This includes trend analysis, 
+                           outlier dection (and treatment), stationarity testing, and time series decomposition."),
+                         p(style="text-align: justify;",
+                           "Next, you'll build models and assess their prediction accuracy. You can manually fit (S)ARIMA and (T)BATS models, 
+                           but first, you must select your train-test split percentage. This is the percentage of the initial time series you 
+                           will use to train the model, whereas the remainder will be used to test your models' performance. While under the 
+                           'Time Series Analysis' dropdown menu, you can always return to the 'Train-Test Split & Dry Forecast' tab to
+                           adjust your selection for this threshold. In this tab, try auto-fitting the SARIMA model (using stepwise selection)
+                           with your chosen train-test percentage. When assessing prediction accuracy, the ratio of root mean squared error 
+                           to mean (rmse-mean ratio) is a good metric to try to minimize, albiet this alone does not reveal the full picture."),
+                         p(style="text-align: justify;",
+                           "Finally, you will visualize your model's performance in the last stage of this application. The 'Model Performance tab' 
+                           stands on its own; meaning, you can independently declare a train-test split percentage in this section when building 
+                           your models. After doing so, and specifying values parameter values for your model, hit 'Run' to render an array of 
+                           accuracy charts to visualize your model's performance. Full screen is recommended for best layout for this page."),
+                         hr(),
+                         panel(
+                           h4("OUTLINE"),
+                           column(4,
+                                  h4("Step 1: Time Series Analysis"),
+                                  tags$ul(
+                                    tags$li(p("Trend Analysis")),
+                                    tags$li(p("Outlier Dection")),
+                                    tags$li(p("Stationarity Test")),
+                                    tags$li(p("Time Series Decomposition"))
+                                  )
+                           ),
+                           column(4,
+                                  h4("Step 2: Model Design and Testing"),
+                                  tags$ul(
+                                    tags$li(p("Train-Test Split and Dry Forecast")),
+                                    tags$li(p("Manually Fit (S)ARIMA Model")),
+                                    tags$li(p("Manually Fit (T)BATS Model"))
+                                  )
+                           ),
+                           column(4,
+                                  h4("Step 3: Model Performance")
+                           )
                          )
+                         
                        )
               ) # tabPanel
     ), # navbarMenu
@@ -921,7 +977,7 @@ ui <- fluidPage(
                                                          "Seasonal",
                                                          "Residual"),
                                              selected = "Residual"),
-                          helpText(h2("NOTE TO SELF: the checkboxgroups would probably look better sitting above the plot vs. to the left."))
+                          # helpText(h2("NOTE TO SELF: the checkboxgroups would probably look better sitting above the plot vs. to the left."))
                         ),
                         mainPanel(
                           plotOutput("season_plot")
@@ -1084,31 +1140,31 @@ ui <- fluidPage(
                      ),
                      column(2,
                             numericInput(inputId = "ar_nonseason2",
-                                         label="Autoregression order (p):",
+                                         label="AR (p):",
                                          value=0)),
                      column(2,
                             numericInput(inputId = "diff_nonseason2",
-                                         label="Degree of differencing (d):",
+                                         label="Diff (d):",
                                          value=0)),
                      column(2,
                             numericInput(inputId = "ma_nonseason2",
-                                         label="Moving average order (q):",
+                                         label="MA (q):",
                                          value=0)),
                      column(2,
                             numericInput(inputId = "ar_season2",
-                                         label="Autoregression order (P):",
+                                         label="AR (P):",
                                          value=0)),
                      column(2,
                             numericInput(inputId = "diff_season2",
-                                         label="Degree of differencing (D):",
+                                         label="Diff (D):",
                                          value=0)),
                      column(2,
                             numericInput(inputId = "ma_season2",
-                                         label="Moving average order (Q):",
+                                         label="MA (Q):",
                                          value=0)),
                      column(2,
                             numericInput(inputId = "period_season2",
-                                         label="Seasonal period (m):",
+                                         label="Period (m):",
                                          value=0))
                    ),
                  ),
