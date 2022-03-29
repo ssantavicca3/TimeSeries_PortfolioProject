@@ -5,10 +5,10 @@ account: ssantavicca
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 5865664
-bundleId: 5690838
+bundleId: 5740926
 url: https://ssantavicca.shinyapps.io/TimeSeriesForecasting/
-when: 1647431797.92777
-lastSyncTime: 1647431797.92777
+when: 1648569321.52723
+lastSyncTime: 1648569321.52723
 asMultiple: FALSE
 asStatic: FALSE
 ignoredFiles: alternative ACF PACF plots.R|Custom Forecast object ggplot theme and plotting function/Custom_plotting_fn_Forecast_data_objects.R|Custom Forecast object ggplot theme and plotting function/Custom_theme_Forecast_data_objects.R|Custom Forecast object ggplot theme and plotting function/NB abt Custom_plotting....txt|EDITStep2_Forecasting.R|Premodel_piped.R|Premodel_raw.R|presentation1_outline.docx|README_diffPremodelFiles.txt|Rplot.pdf|Same_steps_using_Python/Premodel.py|Same_steps_using_Python/Step2_Forecasting.py|sarima_img.png|SourceCode_Instruction.txt|Step2_Forecasting.R

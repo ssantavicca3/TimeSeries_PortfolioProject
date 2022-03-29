@@ -587,7 +587,7 @@ plot_eval_forecast <- function(ts, forecast, test=test, train=train, og_df.date_
   # darkish green: #009900
   # good blue: #3399FF        
   # thicker turquiose: #00CCCC
-  # deeper near-burghandy red: #CC3333
+  # deeper near-burgundy red: #CC3333
   # brighter off-red: #FF6666
   
 }
@@ -991,29 +991,42 @@ ui <- fluidPage(
                tabPanel("Train-Test Split & Dry Forecast", fluid = TRUE,
                         titlePanel("Train-Test Split"),
                         fluidRow(
-                          panel(
-                            column(4,
-                                   sliderInput(inputId = "slider_traintest",
-                                               label = h3("Training set (%)"),
-                                               min = 1, max = 100,
-                                               value = 85)
-                            ),
-                            column(5,
-                                   materialSwitch(inputId = "switch_traintest",
-                                                  status = "info",
-                                                  label = h3("Forecast"))
-                            ),
-                            column(5,
-                                   helpText("Note: The stepwise algorithm for autoarima() can take up to 30 seconds to complete iterations.")
+                          sidebarPanel(
+                            h3("Instructions:"),
+                            helpText(style="text-align: justify;",
+                                     p("Begin by selecting the percentage of the time series that 
+                                       you would like to devote to training your model."),
+                                     p("Then flick the 'Forecast' switch to run a dry forecast of daily sales
+                                       by fitting an ARIMA model using stepwise selection (autoarima() in R).")),
+                            hr(),
+                            h5("Notes:"),
+                            helpText(style="text-align: justify;",
+                                     p("- This percentage will be saved and appliedto the models 
+                                       you will build in the next two tabs of the 'Model Design & 
+                                       Testing' drop-down menu."),
+                                     p("- You can return to this tab at any point to adjust this 
+                                       percentage.")),
+                            hr(),
+                            sliderInput(inputId = "slider_traintest",
+                                        label = h3("Training set (%)"),
+                                        min = 1, max = 100,
+                                        value = 85),
+                            hr(),
+                            materialSwitch(inputId = "switch_traintest",
+                                           status = "info",
+                                           label = h3("Forecast")),
+                            helpText("Note: The stepwise algorithm for autoarima() will take up to 30 seconds to complete iterations for most users."),
+                            width = 2
+                          ),
+                          mainPanel(
+                            fluidRow(
+                              panel(
+                                plotOutput("traintest_plot1"),
+                                plotOutput("traintest_plot2")
+                              )
                             )
                           )
-                        ),
-                        titlePanel("Sample Split"),
-                        plotOutput("traintest_plot1"),
-                        hr(),
-                        titlePanel("Forecast with Stepwise ARIMA"),  # MIGHT NOT ACTUALLY NEED THIS TITLE
-                        plotOutput("traintest_plot2")
-                        
+                        )
                ), # tabPanel
                
                tabPanel("Manually Fit (S)ARIMA MODEL", fluid=T,
@@ -1118,25 +1131,25 @@ ui <- fluidPage(
                sidebarPanel(
                  h3("Instructions:"),
                  helpText(style="text-align: justify;",
-                          h5("First, select the percentage of the time series that you would
-                 like to devote to training your model. Next, enter values for the forecasting
-                 model parameters (i.e., specify your model). Finally, hit the 'Run' switch to 
-                 visualize your model's performance.")),
+                          p("First, select the percentage of the time series that you would
+                             like to devote to training your model."),
+                          p("Next, enter values for the forecasting
+                             model parameters (i.e., specify your model.)"),
+                          p("Finally, hit the 'Run' switch to 
+                             visualize your model's performance.")),
                  hr(),
                  sliderInput(inputId = "slider_traintest2",
-                                    label = h3("Training set (%)"),
-                                    min = 1, max = 100,
-                                    value = 85),
+                             label = h4("Training set (%)"),
+                             min = 1, max = 100,
+                             value = 85),
                  width=2
                ),
                mainPanel(
                  fluidRow(
                    panel(
                      column(2,
-                       h3("(S)ARIMA"),
-                       materialSwitch(inputId = "switch_arima_plot",
-                                      status = "info",
-                                      label = "Run")
+                       h3("(S)ARIMA", style="text-align: center;"),
+                       helpText("Please specify your model", style="text-align: center;")
                      ),
                      column(2,
                             numericInput(inputId = "ar_nonseason2",
@@ -1172,10 +1185,8 @@ ui <- fluidPage(
                  fluidRow(
                    panel(
                      column(2,
-                       h3("(T)BATS"),
-                       materialSwitch(inputId = "switch_tbats_plot",
-                                      status = "info",
-                                      label = "Run")
+                       h3("(T)BATS", style="text-align: center;"),
+                       helpText("Please specify your model", style="text-align: center;")
                      ),
                      column(2,
                             selectInput(inputId = "boxcox_tbat2",
@@ -1207,7 +1218,11 @@ ui <- fluidPage(
                )
              ),
              titlePanel("Visualize Model Performance"),
-             plotOutput("arima_or_tbats_plot")
+             fluidRow(
+               splitLayout(cellWidths = c("50%", "50%"),
+                           plotOutput("tbats_plot2"), 
+                           plotOutput("arima_plot2"))
+             )
              
     ) # Model Performance, tabPanel
     
@@ -1748,34 +1763,25 @@ server <- function(input, output, session) {
   
   ## Performance Plot
   
-  output$arima_or_tbats_plot <- renderPlot({
-    
-    if (!input$switch_arima_plot & !input$switch_tbats_plot) {
-      fit_arima <- arima(train_react2(), 
-                         order=c(0,0,0), 
-                         seasonal=list(order=c(0,0,0),period=0))
-      
-      forecast_arima <- forecast(fit_arima, h = length(test_react2()), level = c(80, 95, 99))
-
-      plot_eval_forecast(ts, forecast_arima_react2(), test_react2(), train_react2(), og_df.date_col = ts_df$date)
-      
-    } else if (input$switch_arima_plot) {
-      plot_eval_forecast(ts, 
-                         forecast_arima_react2(), 
-                         test_react2(), 
-                         train_react2(), 
-                         og_df.date_col = ts_df$date,
-                         console=FALSE)
-    } else if (input$switch_tbats_plot) {
+  # Plot TBATS
+  output$tbats_plot2 <- renderPlot({
       plot_eval_forecast(ts, 
                          forecast_tbats_react2(), 
                          test_react2(), 
                          train_react2(), 
-                         og_df.date_col = ts_df$date,
-                         console=FALSE)
-    }
-    
+                         og_df.date_col = ts_df$date)
   })
+  
+  # Plot ARIMA
+  output$arima_plot2 <- renderPlot({
+      plot_eval_forecast(ts, 
+                         forecast_arima_react2(), 
+                         test_react2(), 
+                         train_react2(), 
+                         og_df.date_col = ts_df$date)
+  })
+  
+ 
   
   
   #slider_traintest2
